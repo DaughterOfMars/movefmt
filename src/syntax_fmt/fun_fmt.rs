@@ -2,19 +2,20 @@
 // Copyright (c) The BitsLab.MoveBit Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::core::token_tree::{NestKind, NestKind_, TokenTree};
+use crate::core::token_tree::{NestData, NestKind, TokenTree};
 use crate::syntax_fmt::expr_fmt;
 use crate::tools::syntax::parse_file_string;
 use crate::tools::utils::FileLineMappingOneFile;
 use commentfmt::Config;
 use move_command_line_common::files::FileHash;
+use move_compiler::editions::Edition;
 use move_compiler::parser::ast::Definition;
 use move_compiler::parser::ast::*;
 use move_compiler::parser::lexer::{Lexer, Tok};
 use move_compiler::shared::CompilationEnv;
 use move_compiler::Flags;
 use move_ir_types::location::*;
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Default)]
 pub struct FunExtractor {
@@ -40,8 +41,8 @@ impl FunExtractor {
         };
 
         this_fun_extractor.line_mapping.update(&fmt_buffer);
-        let attrs: BTreeSet<String> = BTreeSet::new();
-        let mut env = CompilationEnv::new(Flags::testing(), attrs);
+        let attrs = BTreeMap::new();
+        let mut env = CompilationEnv::new(Flags::testing(), Vec::new(), attrs, None);
         let filehash = FileHash::empty();
         let (defs, _) = parse_file_string(&mut env, filehash, &fmt_buffer).unwrap();
 
@@ -91,10 +92,6 @@ impl FunExtractor {
         }
     }
 
-    fn collect_script(&mut self, d: &Script) {
-        self.collect_function(&d.function);
-    }
-
     fn collect_definition(&mut self, d: &Definition) {
         match d {
             Definition::Module(x) => self.collect_module(x),
@@ -103,7 +100,6 @@ impl FunExtractor {
                     self.collect_module(x);
                 }
             }
-            Definition::Script(x) => self.collect_script(x),
         }
     }
 }
@@ -124,7 +120,7 @@ fn get_space_cnt_before_line_str(s: &str) -> usize {
 }
 
 impl FunExtractor {
-    pub(crate) fn is_generic_ty_in_fun_header(&self, kind: &NestKind) -> bool {
+    pub(crate) fn is_generic_ty_in_fun_header(&self, kind: &NestData) -> bool {
         let loc_vec = &self.loc_vec;
         let body_loc_vec = &self.body_loc_vec;
 
@@ -161,7 +157,7 @@ pub(crate) fn fun_header_specifier_fmt(specifier: &str, indent_str: &str) -> Str
     tracing::debug!("fun_specifier_str = {}", specifier);
 
     let mut fun_specifiers_code = vec![];
-    let mut lexer = Lexer::new(specifier, FileHash::empty());
+    let mut lexer = Lexer::new(specifier, FileHash::empty(), Edition::E2024_BETA);
     lexer.advance().unwrap();
     while lexer.peek() != Tok::EOF {
         fun_specifiers_code.push((
@@ -330,7 +326,7 @@ pub(crate) fn process_block_comment_before_fun_header(
     for (fun_idx, (fun_start_line, _)) in fun_extractor.loc_line_vec.iter().enumerate() {
         let fun_header_str =
             get_nth_line(buf.as_str(), *fun_start_line as usize).unwrap_or_default();
-        let mut lexer = Lexer::new(fun_header_str, FileHash::empty());
+        let mut lexer = Lexer::new(fun_header_str, FileHash::empty(), Edition::E2024_BETA);
         lexer.advance().unwrap();
         if lexer.peek() != Tok::EOF && !fun_header_str[0..lexer.start_loc()].trim_start().is_empty()
         {
@@ -379,7 +375,7 @@ pub(crate) fn process_fun_header_too_long(fmt_buffer: String, config: Config) ->
         }
 
         let mut insert_loc = ret_ty_loc.end() as usize - fun_loc.start() as usize;
-        let mut lexer = Lexer::new(fun_name_str, FileHash::empty());
+        let mut lexer = Lexer::new(fun_name_str, FileHash::empty(), Edition::E2024_BETA);
         lexer.advance().unwrap();
         while lexer.peek() != Tok::EOF {
             if lexer.peek() == Tok::Colon {
@@ -448,7 +444,7 @@ pub(crate) fn process_fun_ret_ty(fmt_buffer: String, config: Config) -> String {
                 .nth(fun_extractor.loc_line_vec[fun_idx].0 as usize)
                 .unwrap_or_default();
             let ret_ty_str = fun_name_str.lines().last().unwrap_or_default();
-            let mut lexer = Lexer::new(ret_ty_str, FileHash::empty());
+            let mut lexer = Lexer::new(ret_ty_str, FileHash::empty(), Edition::E2024_BETA);
             lexer.advance().unwrap();
             if lexer.peek() != Tok::Colon {
                 continue;
@@ -472,7 +468,7 @@ pub(crate) fn process_fun_ret_ty(fmt_buffer: String, config: Config) -> String {
     result
 }
 
-pub(crate) fn process_fun_annotation(kind: NestKind, elements: Vec<TokenTree>) -> String {
+pub(crate) fn process_fun_annotation(kind: NestData, elements: Vec<TokenTree>) -> String {
     fn process_simple_token(token: &TokenTree, next_token: Option<&TokenTree>) -> String {
         let mut fmt_result_str = "".to_string();
         fmt_result_str.push_str(token.simple_str().unwrap_or_default());
@@ -486,7 +482,7 @@ pub(crate) fn process_fun_annotation(kind: NestKind, elements: Vec<TokenTree>) -
         let mut fmt_result_str = "".to_string();
         if let TokenTree::Nested {
             elements,
-            kind,
+            data: kind,
             note: _,
         } = nested_token_tree
         {
@@ -507,7 +503,7 @@ pub(crate) fn process_fun_annotation(kind: NestKind, elements: Vec<TokenTree>) -
         match token {
             TokenTree::Nested {
                 elements: _,
-                kind: _,
+                data: _,
                 note: _,
             } => process_nested_token(token),
             TokenTree::SimpleToken {
@@ -519,10 +515,10 @@ pub(crate) fn process_fun_annotation(kind: NestKind, elements: Vec<TokenTree>) -
         }
     }
 
-    if NestKind_::Bracket == kind.kind {
+    if NestKind::Bracket == kind.kind {
         let fmt_result_str = process_nested_token(&TokenTree::Nested {
             elements,
-            kind,
+            data: kind,
             note: None,
         });
         tracing::debug!("fmt_result_str = {}", fmt_result_str);

@@ -2,7 +2,7 @@
 // Copyright (c) The BitsLab.MoveBit Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::core::token_tree::{analyze_token_tree_length, NestKind, NestKind_, Note, TokenTree};
+use crate::core::token_tree::{analyze_token_tree_length, NestData, NestKind, Note, TokenTree};
 use commentfmt::Config;
 use move_compiler::parser::lexer::Tok;
 
@@ -93,7 +93,7 @@ fn get_start_tok(t: &TokenTree) -> Tok {
         } => *tok,
         TokenTree::Nested {
             elements: _,
-            kind,
+            data: kind,
             note: _,
         } => kind.kind.start_tok(),
     }
@@ -109,7 +109,7 @@ fn get_end_tok(t: &TokenTree) -> Tok {
         } => *tok,
         TokenTree::Nested {
             elements: _,
-            kind,
+            data: kind,
             note: _,
         } => kind.kind.end_tok(),
     }
@@ -130,7 +130,7 @@ fn get_nested_and_comma_num(elements: &Vec<TokenTree>) -> (usize, usize) {
     for ele in elements {
         if let TokenTree::Nested {
             elements: recursive_elements,
-            kind: _,
+            data: _,
             note: _,
         } = ele
         {
@@ -195,12 +195,12 @@ pub(crate) fn need_space(current: &TokenTree, next: Option<&TokenTree>) -> bool 
 
     let mut is_next_tok_nested = false;
     let mut next_tok_nested_eles_len = 0;
-    let mut next_tok_nested_kind = NestKind_::Brace;
+    let mut next_tok_nested_kind = NestKind::Brace;
     let mut next_tok_simple_content = "".to_string();
     match next_token_tree {
         TokenTree::Nested {
             elements,
-            kind,
+            data: kind,
             note: _,
         } => {
             is_next_tok_nested = true;
@@ -287,7 +287,7 @@ pub(crate) fn need_space(current: &TokenTree, next: Option<&TokenTree>) -> bool 
                 is_to_execpt
             } else {
                 let mut result = false;
-                if is_next_tok_nested && next_tok_nested_kind == NestKind_::Brace {
+                if is_next_tok_nested && next_tok_nested_kind == NestKind::Brace {
                     result = true;
                 }
                 if !is_next_tok_nested {
@@ -357,14 +357,14 @@ pub(crate) fn need_space(current: &TokenTree, next: Option<&TokenTree>) -> bool 
 }
 
 pub(crate) fn judge_simple_paren_expr(
-    kind: &NestKind,
+    kind: &NestData,
     elements: &Vec<TokenTree>,
     config: Config,
 ) -> bool {
     if elements.is_empty() {
         return true;
     };
-    if NestKind_::ParentTheses == kind.kind {
+    if NestKind::ParentTheses == kind.kind {
         let paren_num = get_nested_and_comma_num(elements);
         tracing::debug!(
             "elements[0] = {:?}, paren_num = {:?}",

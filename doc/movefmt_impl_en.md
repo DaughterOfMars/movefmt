@@ -192,7 +192,7 @@ struct FormatConfig
 ```
 #### Comment Processing Structure:
 ```rust
-struct CommentExtrator
+struct CommentExtractor
 struct Comment
 ```
 #### Main Logic Structure for Rewriting:
@@ -208,7 +208,7 @@ struct Fmt
 
 3).Retrieve AST through syntactic analysis.
 
-4).Gather comments using CommentExtrator.
+4).Gather comments using CommentExtractor.
 
 
 #### Step 2: Traverse the TokenTree for formatting.
@@ -267,14 +267,14 @@ pub enum CommentKind {
     BlockComment,
 }
 
-pub struct CommentExtrator {
+pub struct CommentExtractor {
     pub comments: Vec<Comment>,
 }
 ```
 
 #### Extrator algorithm
 ```rust
-pub enum ExtratorCommentState {
+pub enum ExtractorCommentState {
     /// init state
     Init,
     /// `/` has been seen,maybe a comment.
@@ -291,8 +291,8 @@ pub enum ExtratorCommentState {
 ```
 >pseudocode about extracting all kinds of comments
 ```text
-CommentExtrator:
-If input_string's length is less than or equal to 1, return an empty CommentExtrator instance.
+CommentExtractor:
+If input_string's length is less than or equal to 1, return an empty CommentExtractor instance.
 
 Initialization:
 Create a state machine with an initial state of "not started".
@@ -333,7 +333,7 @@ If the current character is '' and the next character is '"', skip these two cha
 If the current character is ''' and the next character is '', skip these two characters.
 If the current character is '"' and the state was 'quote', set the state to "not started".
 
-Return a new CommentExtrator instance containing all extracted comments found.
+Return a new CommentExtractor instance containing all extracted comments found.
 ```
 The functionality of this pseudocode is to extract all comments from a provided string. It begins by checking whether the input is empty or contains only one character (in which case no extraction can occur), then initiates a state machine to track the various kinds of parsing states (such as inline or block comments).
 
@@ -520,7 +520,7 @@ eg: format a single move file.
     let lexer = Lexer::new(&content, filehash);
     let parse = crate::token_tree::Parser::new(lexer, &defs);
     let parse_result = parse.parse_tokens();
-    let ce = CommentExtrator::new(content).unwrap();
+    let ce = CommentExtractor::new(content).unwrap();
     let mut t = FileLineMappingOneFile::default();
     t.update(&content);
 
@@ -535,6 +535,6 @@ steps:
 
 2).Call `parse.parse_tokens()` to obtain `Vec<TokenTree>`.
 
-3).Call `CommentExtrator` to obtain `Vec<Comment>`.
+3).Call `CommentExtractor` to obtain `Vec<Comment>`.
 
 4).Call `format_token_trees` to obtain `String` which contains formatted file content.

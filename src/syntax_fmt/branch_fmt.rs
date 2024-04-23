@@ -5,6 +5,7 @@
 use crate::tools::utils::FileLineMappingOneFile;
 use commentfmt::Config;
 use move_command_line_common::files::FileHash;
+use move_compiler::editions::Edition;
 use move_compiler::parser::ast::Definition;
 use move_compiler::parser::ast::*;
 use move_compiler::parser::lexer::{Lexer, Tok};
@@ -168,10 +169,6 @@ impl BranchExtractor {
         }
     }
 
-    fn collect_script(&mut self, d: &Script) {
-        self.collect_function(&d.function);
-    }
-
     fn collect_definition(&mut self, d: &Definition) {
         match d {
             Definition::Module(x) => self.collect_module(x),
@@ -180,7 +177,6 @@ impl BranchExtractor {
                     self.collect_module(x);
                 }
             }
-            Definition::Script(x) => self.collect_script(x),
         }
     }
 }
@@ -326,10 +322,10 @@ pub fn split_if_else_in_let_block(fmt_buffer: String, config: Config) -> String 
     use crate::tools::syntax::parse_file_string;
     use move_compiler::shared::CompilationEnv;
     use move_compiler::Flags;
-    use std::collections::BTreeSet;
+    use std::collections::BTreeMap;
 
     let mut branch_extractor = BranchExtractor::new(fmt_buffer.clone(), BranchKind::LetIfElse);
-    let mut env = CompilationEnv::new(Flags::testing(), BTreeSet::new());
+    let mut env = CompilationEnv::new(Flags::testing(), Vec::new(), BTreeMap::new(), None);
     let (defs, _) = parse_file_string(&mut env, FileHash::empty(), &fmt_buffer).unwrap();
     branch_extractor.preprocess(defs);
 
@@ -410,7 +406,7 @@ pub fn split_if_else_in_let_block(fmt_buffer: String, config: Config) -> String 
 
     let get_else_pos = |let_if_else_loc: Loc, else_branch_in_let_loc: Loc| {
         let branch_str = &fmt_buffer[0..let_if_else_loc.end() as usize];
-        let mut lexer = Lexer::new(branch_str, FileHash::empty());
+        let mut lexer = Lexer::new(branch_str, FileHash::empty(), Edition::E2024_BETA);
         lexer.advance().unwrap();
         let mut else_in_let_vec = vec![];
         while lexer.peek() != Tok::EOF {

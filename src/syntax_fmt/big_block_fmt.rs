@@ -10,7 +10,7 @@ use move_compiler::parser::ast::*;
 use move_compiler::shared::CompilationEnv;
 use move_compiler::Flags;
 use move_ir_types::location::*;
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Default)]
 pub struct BigBlockExtractor {
@@ -26,8 +26,8 @@ impl BigBlockExtractor {
         };
 
         big_block_extractor.line_mapping.update(&fmt_buffer);
-        let attrs: BTreeSet<String> = BTreeSet::new();
-        let mut env = CompilationEnv::new(Flags::testing(), attrs);
+        let attrs = BTreeMap::new();
+        let mut env = CompilationEnv::new(Flags::testing(), Vec::new(), attrs, None);
         let (defs, _) = parse_file_string(&mut env, FileHash::empty(), &fmt_buffer).unwrap();
 
         for d in defs.iter() {
@@ -40,6 +40,10 @@ impl BigBlockExtractor {
         self.blk_loc_vec.push(s.loc);
     }
 
+    fn collect_enum(&mut self, s: &EnumDefinition) {
+        self.blk_loc_vec.push(s.loc);
+    }
+
     fn collect_function(&mut self, d: &Function) {
         match &d.body.value {
             FunctionBody_::Defined(..) => {
@@ -49,25 +53,14 @@ impl BigBlockExtractor {
         }
     }
 
-    fn collect_spec(&mut self, spec_block: &SpecBlock) {
-        self.blk_loc_vec.push(spec_block.loc);
-    }
-
     fn collect_module(&mut self, d: &ModuleDefinition) {
         for m in d.members.iter() {
             match &m {
                 ModuleMember::Struct(x) => self.collect_struct(x),
+                ModuleMember::Enum(x) => self.collect_enum(x),
                 ModuleMember::Function(x) => self.collect_function(x),
-                ModuleMember::Spec(s) => self.collect_spec(s),
                 _ => {}
             }
-        }
-    }
-
-    fn collect_script(&mut self, d: &Script) {
-        self.collect_function(&d.function);
-        for s in d.specs.iter() {
-            self.collect_spec(s);
         }
     }
 
@@ -79,7 +72,6 @@ impl BigBlockExtractor {
                     self.collect_module(x);
                 }
             }
-            Definition::Script(x) => self.collect_script(x),
         }
     }
 }

@@ -1,14 +1,17 @@
+// Copyright 2024 IOTA Stiftung
+// SPDX-License-Identifier: Apache-2.0
+
 use move_command_line_common::files::FileHash;
 use movefmt::{
-    core::token_tree::{CommentExtrator, CommentExtratorErr, TokenTree},
+    core::token_tree::{CommentExtractor, CommentExtractorErr, TokenTree},
     tools::movefmt_diff,
     tools::syntax::parse_file_string,
     tools::utils::*,
 };
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use tracing_subscriber::EnvFilter;
 
-use move_compiler::{parser::lexer::Lexer, shared::CompilationEnv, Flags};
+use move_compiler::{editions::Edition, parser::lexer::Lexer, shared::CompilationEnv, Flags};
 use std::path::Path;
 
 fn scan_dir(dir: &str) -> usize {
@@ -61,8 +64,8 @@ fn test_on_file(p: impl AsRef<Path>) -> bool {
     eprintln!("try format:{:?}", p);
     let content_origin = std::fs::read_to_string(&p).unwrap();
     {
-        let attrs: BTreeSet<String> = BTreeSet::new();
-        let mut env = CompilationEnv::new(Flags::testing(), attrs);
+        let attrs = BTreeMap::new();
+        let mut env = CompilationEnv::new(Flags::testing(), Vec::new(), attrs, None);
         match parse_file_string(&mut env, FileHash::empty(), &content_origin) {
             Ok(_) => {}
             Err(_) => {
@@ -140,8 +143,8 @@ struct ExtractToken {
     col: u32,
 }
 
-fn extract_comments(content: &str) -> Result<Vec<String>, CommentExtratorErr> {
-    let c = CommentExtrator::new(content)?;
+fn extract_comments(content: &str) -> Result<Vec<String>, CommentExtractorErr> {
+    let c = CommentExtractor::new(content)?;
     let c: Vec<_> = c
         .comments
         .into_iter()
@@ -158,8 +161,8 @@ fn extract_tokens(content: &str) -> Result<Vec<ExtractToken>, Vec<String>> {
     let mut line_mapping = FileLineMapping::default();
     line_mapping.update(p.clone(), &content);
     let filehash = FileHash::empty();
-    let attrs: BTreeSet<String> = BTreeSet::new();
-    let mut env = CompilationEnv::new(Flags::testing(), attrs);
+    let attrs = BTreeMap::new();
+    let mut env = CompilationEnv::new(Flags::testing(), Vec::new(), attrs, None);
     let (defs, _comments) = match parse_file_string(&mut env, filehash, content) {
         Ok(x) => x,
         Err(d) => {
@@ -177,7 +180,7 @@ fn extract_tokens(content: &str) -> Result<Vec<ExtractToken>, Vec<String>> {
             return Err(ret);
         }
     };
-    let lexer = Lexer::new(content, filehash);
+    let lexer = Lexer::new(content, filehash, Edition::E2024_BETA);
     let mut ret = Vec::new();
     let parse = movefmt::core::token_tree::Parser::new(lexer, &defs);
     let token_tree = parse.parse_tokens();
@@ -203,7 +206,7 @@ fn extract_tokens(content: &str) -> Result<Vec<ExtractToken>, Vec<String>> {
             }
             TokenTree::Nested {
                 elements,
-                kind,
+                data: kind,
                 note: _,
             } => {
                 let start_loc = m

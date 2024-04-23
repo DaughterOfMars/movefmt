@@ -185,7 +185,7 @@ FormatContext,TokenTree
 2.其他重要结构
 FormatEnv,FormatConfig
 3.注释处理结构
-CommentExtrator,Comment
+CommentExtractor,Comment
 4.重写主逻辑结构
 Fmt
 
@@ -197,7 +197,7 @@ Fmt
 FormatConfig 存放格式规则, 
 通过词法分析得到 TokenTree,
 通过语法分析拿到 AST,
-通过 CommentExtrator 拿到 Comment.
+通过 CommentExtractor 拿到 Comment.
 
 2.step2:遍历 TokenTree,进行格式化
 Fmt 在遍历 TokenTree 的时候,会结合 move_compiler::parser::ast::Definition,
@@ -265,14 +265,14 @@ pub enum CommentKind {
     BlockComment,
 }
 
-pub struct CommentExtrator {
+pub struct CommentExtractor {
     pub comments: Vec<Comment>,
 }
 ```
 
 #### Extrator algorithm
 ```rust
-pub enum ExtratorCommentState {
+pub enum ExtractorCommentState {
     /// init state
     Init,
     /// `/` has been seen,maybe a comment.
@@ -290,8 +290,8 @@ pub enum ExtratorCommentState {
 
 >pseudocode about extracting all kinds of comments
 ```text
-CommentExtrator:
-    如果 input_string 的长度小于等于 1,返回空的 CommentExtrator 实例.
+CommentExtractor:
+    如果 input_string 的长度小于等于 1,返回空的 CommentExtractor 实例.
     
     初始化:
     创建一个状态机,初始状态为 "未开始".
@@ -334,7 +334,7 @@ CommentExtrator:
                 如果当前字符是 '"',则将状态更改为 "未开始".
                 如果当前字符是 '\n',则抛出错误.
                 
-    返回一个新的 CommentExtrator 实例,其中包含提取出的所有注释.
+    返回一个新的 CommentExtractor 实例,其中包含提取出的所有注释.
 ```
 首先检查输入字符串是否为空或只有一个字符(在这种情况下没有注释可提取),然后创建一个 State Machine 来跟踪当前处于哪种解析状态(例如:正在处理行内注释,块注释等).
 
@@ -522,7 +522,7 @@ eg: format a single move file.
     let lexer = Lexer::new(&content, filehash);
     let parse = crate::token_tree::Parser::new(lexer, &defs);
     let parse_result = parse.parse_tokens();
-    let ce = CommentExtrator::new(content).unwrap();
+    let ce = CommentExtractor::new(content).unwrap();
     let mut t = FileLineMappingOneFile::default();
     t.update(&content);
 
@@ -537,6 +537,6 @@ steps:
 
 2).Call `parse.parse_tokens()` to obtain `Vec<TokenTree>`.
 
-3).Call `CommentExtrator` to obtain `Vec<Comment>`.
+3).Call `CommentExtractor` to obtain `Vec<Comment>`.
 
 4).Call `format_token_trees` to obtain `String` which contains formatted file content.

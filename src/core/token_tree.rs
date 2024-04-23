@@ -1,3 +1,6 @@
+// Copyright 2024 IOTA Stiftung
+// SPDX-License-Identifier: Apache-2.0
+
 // Copyright © Aptos Foundation
 // Copyright (c) The BitsLab.MoveBit Contributors
 // SPDX-License-Identifier: Apache-2.0
@@ -12,7 +15,7 @@ use move_compiler::parser::lexer::{Lexer, Tok};
 use move_compiler::shared::Identifier;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize)]
-pub enum NestKind_ {
+pub enum NestKind {
     /// ()
     ParentTheses,
     /// []  
@@ -26,13 +29,13 @@ pub enum NestKind_ {
 }
 
 #[derive(Clone, Copy, serde::Serialize, Debug)]
-pub struct NestKind {
-    pub kind: NestKind_,
+pub struct NestData {
+    pub kind: NestKind,
     pub start_pos: u32,
     pub end_pos: u32,
 }
 
-impl NestKind {
+impl NestData {
     pub fn start_token_tree(&self) -> TokenTree {
         TokenTree::SimpleToken {
             content: self.kind.start_tok().to_string(),
@@ -66,8 +69,8 @@ impl Delimiter {
         }
     }
 }
-impl NestKind_ {
-    pub fn is_nest_start(tok: Tok) -> Option<NestKind_> {
+impl NestKind {
+    pub fn is_nest_start(tok: Tok) -> Option<NestKind> {
         match tok {
             Tok::LParen => Some(Self::ParentTheses),
             Tok::LBracket => Some(Self::Bracket),
@@ -80,21 +83,21 @@ impl NestKind_ {
 
     pub const fn start_tok(self) -> Tok {
         match self {
-            NestKind_::ParentTheses => Tok::LParen,
-            NestKind_::Bracket => Tok::LBracket,
-            NestKind_::Brace => Tok::LBrace,
-            NestKind_::Type => Tok::Less,
-            NestKind_::Lambda => Tok::Pipe,
+            NestKind::ParentTheses => Tok::LParen,
+            NestKind::Bracket => Tok::LBracket,
+            NestKind::Brace => Tok::LBrace,
+            NestKind::Type => Tok::Less,
+            NestKind::Lambda => Tok::Pipe,
         }
     }
 
     pub fn end_tok(self) -> Tok {
         match self {
-            NestKind_::ParentTheses => Tok::RParen,
-            NestKind_::Bracket => Tok::RBracket,
-            NestKind_::Brace => Tok::RBrace,
-            NestKind_::Type => Tok::Greater,
-            NestKind_::Lambda => Tok::Pipe,
+            NestKind::ParentTheses => Tok::RParen,
+            NestKind::Bracket => Tok::RBracket,
+            NestKind::Brace => Tok::RBrace,
+            NestKind::Type => Tok::Greater,
+            NestKind::Lambda => Tok::Pipe,
         }
     }
 }
@@ -112,7 +115,7 @@ pub enum TokenTree {
     },
     Nested {
         elements: Vec<TokenTree>,
-        kind: NestKind,
+        data: NestData,
         #[serde(skip_serializing)]
         note: Option<Note>,
     },
@@ -162,7 +165,7 @@ impl TokenTree {
             } => *note,
             TokenTree::Nested {
                 elements: _,
-                kind: _,
+                data: _,
                 note,
             } => *note,
         }
@@ -177,7 +180,7 @@ impl TokenTree {
             } => pos + (content.len() as u32),
             TokenTree::Nested {
                 elements: _,
-                kind,
+                data: kind,
                 note: _,
             } => kind.end_pos,
         }
@@ -200,7 +203,7 @@ impl TokenTree {
             } => Some(content.as_str()),
             TokenTree::Nested {
                 elements: _,
-                kind: _,
+                data: _,
                 note: _,
             } => None,
         }
@@ -213,10 +216,15 @@ pub struct Parser<'a> {
     type_lambda_pair: Vec<(u32, u32)>,
     type_lambda_pair_index: usize,
     struct_definitions: Vec<(u32, u32)>,
+    enum_definitions: Vec<(u32, u32)>,
     bin_op: HashSet<u32>,
     fun_body: HashSet<u32>, // start pos.
     apple_name: HashSet<u32>,
     address_module: Vec<(u32, u32)>,
+    match_body: HashSet<u32>,
+    match_arms: HashSet<u32>,
+    patterns: HashSet<u32>,
+    pattern_or: HashSet<u32>,
 }
 
 impl<'a> Parser<'a> {
@@ -226,11 +234,16 @@ impl<'a> Parser<'a> {
             defs,
             type_lambda_pair: Default::default(),
             type_lambda_pair_index: 0,
-            struct_definitions: vec![],
+            struct_definitions: Vec::new(),
+            enum_definitions: Vec::new(),
             bin_op: Default::default(),
             fun_body: Default::default(),
             apple_name: Default::default(),
-            address_module: vec![],
+            address_module: Vec::new(),
+            match_arms: Default::default(),
+            match_body: Default::default(),
+            patterns: Default::default(),
+            pattern_or: Default::default(),
         };
         x.collect_various_information();
         x
@@ -268,13 +281,12 @@ impl<'a> Parser<'a> {
         ret
     }
 
-    fn is_nest_start(&mut self) -> Option<NestKind_> {
-        let t = match NestKind_::is_nest_start(self.lexer.peek()) {
-            Some(x) => x,
-            None => return None,
+    fn is_nest_start(&mut self) -> Option<NestKind> {
+        let Some(nest_kind) = NestKind::is_nest_start(self.lexer.peek()) else {
+            return None;
         };
-        match t {
-            NestKind_::Type | NestKind_::Lambda => {
+        match nest_kind {
+            NestKind::Type | NestKind::Lambda => {
                 let pos = self.lexer.start_loc() as u32;
                 // try drop
                 for (_, end) in &self.type_lambda_pair[self.type_lambda_pair_index..] {
@@ -290,18 +302,18 @@ impl<'a> Parser<'a> {
                     .next()
                 {
                     if &pos >= start && &pos <= end {
-                        return Some(t);
+                        return Some(nest_kind);
                     } else {
                         return None;
                     }
                 }
                 None
             }
-            _ => Some(t),
+            _ => Some(nest_kind),
         }
     }
 
-    fn parse_nested(&mut self, kind: NestKind_) -> TokenTree {
+    fn parse_nested(&mut self, kind: NestKind) -> TokenTree {
         debug_assert!(self.lexer.peek() == kind.start_tok());
         let start = self.lexer.start_loc() as u32;
         self.lexer.advance().unwrap();
@@ -311,7 +323,7 @@ impl<'a> Parser<'a> {
             .struct_definitions
             .iter()
             .any(|x| x.0 <= start && x.1 >= start)
-            && kind == NestKind_::Brace
+            && kind == NestKind::Brace
         {
             note = Some(Note::StructDefinition);
         }
@@ -333,7 +345,7 @@ impl<'a> Parser<'a> {
                 ret.push(self.parse_nested(kind));
                 continue;
             }
-            if kind == NestKind_::Type && self.lexer.peek() == Tok::GreaterGreater {
+            if kind == NestKind::Type && self.lexer.peek() == Tok::GreaterGreater {
                 self.adjust_token(Tok::Greater);
                 break;
             }
@@ -350,7 +362,7 @@ impl<'a> Parser<'a> {
         self.lexer.advance().unwrap();
         TokenTree::Nested {
             elements: ret,
-            kind: NestKind {
+            data: NestData {
                 kind,
                 start_pos: start,
                 end_pos: end,
@@ -399,14 +411,6 @@ impl<'a> Parser<'a> {
                         collect_module(p, x);
                     }
                 }
-                Definition::Script(x) => collect_script(p, x),
-            }
-        }
-
-        fn collect_script(p: &mut Parser, d: &Script) {
-            collect_function(p, &d.function);
-            for s in d.specs.iter() {
-                collect_spec(p, s);
             }
         }
 
@@ -415,12 +419,13 @@ impl<'a> Parser<'a> {
                 match &m {
                     ModuleMember::Function(x) => collect_function(p, x),
                     ModuleMember::Struct(x) => collect_struct(p, x),
+                    ModuleMember::Enum(e) => collect_enum(p, e),
                     ModuleMember::Use(_) => {}
                     ModuleMember::Friend(_) => {}
                     ModuleMember::Constant(x) => {
                         collect_const(p, x);
                     }
-                    ModuleMember::Spec(s) => collect_spec(p, s),
+                    ModuleMember::Spec(_) => {}
                 }
             }
         }
@@ -428,6 +433,11 @@ impl<'a> Parser<'a> {
         fn collect_struct(p: &mut Parser, s: &StructDefinition) {
             p.type_lambda_pair.push((s.loc.start(), s.loc.end()));
             p.struct_definitions.push((s.loc.start(), s.loc.end()));
+        }
+
+        fn collect_enum(p: &mut Parser, e: &EnumDefinition) {
+            p.type_lambda_pair.push((e.loc.start(), e.loc.end()));
+            p.enum_definitions.push((e.loc.start(), e.loc.end()));
         }
 
         fn collect_seq_item(p: &mut Parser, s: &SequenceItem) {
@@ -458,46 +468,61 @@ impl<'a> Parser<'a> {
         fn collect_expr(p: &mut Parser, e: &Exp) {
             match &e.value {
                 Exp_::Value(_) => {}
-                Exp_::Move(_) => {}
-                Exp_::Copy(_) => {}
-                Exp_::Name(name, tys) => {
-                    if tys.is_some() {
-                        p.type_lambda_pair.push((name.loc.end(), e.loc.end()));
-                    }
+                Exp_::Move(_, _) => {}
+                Exp_::Copy(_, _) => {}
+                Exp_::Name(name) => {
+                    p.type_lambda_pair.push((name.loc.end(), e.loc.end()));
                 }
-                Exp_::Call(name, _, _tys, es) => {
+                Exp_::Call(name, es) => {
                     p.type_lambda_pair.push((name.loc.end(), es.loc.start()));
                     es.value.iter().for_each(|e| collect_expr(p, e));
                 }
-                Exp_::Pack(name, _tys, es) => {
+                Exp_::DotCall(e, name, _, _, es) => {
+                    collect_expr(p, e);
+                    p.type_lambda_pair.push((name.loc.end(), es.loc.start()));
+                    es.value.iter().for_each(|e| collect_expr(p, e));
+                }
+                Exp_::Pack(name, es) => {
                     if let Some(e) = es.get(0) {
                         p.type_lambda_pair.push((name.loc.end(), e.0.loc().start()));
                     }
                     es.iter().for_each(|e| collect_expr(p, &e.1));
                 }
-                Exp_::Vector(name_loc, _tys, es) => {
+                Exp_::Vector(name_loc, _, es) => {
                     p.type_lambda_pair.push((name_loc.end(), es.loc.start()));
                     es.value.iter().for_each(|e| collect_expr(p, e));
                 }
-                Exp_::IfElse(c, then_, eles_) => {
-                    collect_expr(p, c.as_ref());
-                    collect_expr(p, then_.as_ref());
-                    if let Some(else_) = eles_ {
-                        collect_expr(p, else_.as_ref());
+                Exp_::IfElse(condition, then_, else_) => {
+                    collect_expr(p, condition);
+                    collect_expr(p, then_);
+                    if let Some(else_) = else_ {
+                        collect_expr(p, else_);
                     }
                 }
                 Exp_::While(e, then_) => {
-                    collect_expr(p, e.as_ref());
-                    collect_expr(p, then_.as_ref());
+                    collect_expr(p, e);
+                    collect_expr(p, then_);
                 }
                 Exp_::Loop(b) => {
-                    collect_expr(p, b.as_ref());
+                    collect_expr(p, b);
+                }
+                Exp_::Match(e, arms) => {
+                    collect_expr(p, e);
+                    p.match_body.insert(arms.loc.start());
+                    for arm in &arms.value {
+                        p.match_arms.insert(arm.loc.start());
+                        if let Some(guard) = &arm.value.guard {
+                            collect_expr(p, guard);
+                        }
+                        collect_match_pattern(p, &arm.value.pattern);
+                        collect_expr(p, &arm.value.rhs);
+                    }
                 }
                 Exp_::Block(b) => collect_seq(p, b),
 
-                Exp_::Lambda(b, e) => {
+                Exp_::Lambda(b, _, e) => {
                     p.type_lambda_pair.push((b.loc.start(), b.loc.end()));
-                    collect_expr(p, e.as_ref());
+                    collect_expr(p, e);
                 }
                 Exp_::Quant(_, _, es, e1, e2) => {
                     es.iter().for_each(|e| {
@@ -506,147 +531,108 @@ impl<'a> Parser<'a> {
                         }
                     });
                     if let Some(t) = e1 {
-                        collect_expr(p, t.as_ref());
+                        collect_expr(p, t);
                     }
-                    collect_expr(p, e2.as_ref());
+                    collect_expr(p, e2);
                 }
                 Exp_::ExpList(es) => {
                     es.iter().for_each(|e| collect_expr(p, e));
                 }
                 Exp_::Unit => {}
-                Exp_::Assign(l, r) => {
-                    collect_expr(p, l.as_ref());
-                    collect_expr(p, r.as_ref());
+                Exp_::Parens(e) => {
+                    collect_expr(p, e);
                 }
-                Exp_::Return(e) => {
+                Exp_::Assign(l, r) => {
+                    collect_expr(p, l);
+                    collect_expr(p, r);
+                }
+                Exp_::Return(_, e) => {
                     if let Some(t) = e {
-                        collect_expr(p, t.as_ref());
+                        collect_expr(p, t);
                     }
                 }
                 Exp_::Abort(e) => {
-                    collect_expr(p, e.as_ref());
+                    collect_expr(p, e);
                 }
-                Exp_::Break => {}
-                Exp_::Continue => {}
+                Exp_::Break(_, e) => {
+                    if let Some(t) = e {
+                        collect_expr(p, t);
+                    }
+                }
+                Exp_::Continue(_) => {}
+                Exp_::Labeled(_, e) => {
+                    collect_expr(p, e);
+                }
                 Exp_::Dereference(e) => {
-                    collect_expr(p, e.as_ref());
+                    collect_expr(p, e);
                 }
                 Exp_::UnaryExp(_, e) => {
-                    collect_expr(p, e.as_ref());
+                    collect_expr(p, e);
                 }
                 Exp_::BinopExp(l, op, r) => {
                     p.bin_op.insert(op.loc.start());
-                    collect_expr(p, l.as_ref());
-                    collect_expr(p, r.as_ref());
+                    collect_expr(p, l);
+                    collect_expr(p, r);
                 }
                 Exp_::Borrow(_, e) => {
-                    collect_expr(p, e.as_ref());
+                    collect_expr(p, e);
                 }
                 Exp_::Dot(e, _) => {
-                    collect_expr(p, e.as_ref());
+                    collect_expr(p, e);
                 }
                 Exp_::Index(e, i) => {
-                    collect_expr(p, e.as_ref());
-                    collect_expr(p, i.as_ref());
+                    collect_expr(p, e);
+                    for e in &i.value {
+                        collect_expr(p, e);
+                    }
                 }
                 Exp_::Cast(e, ty) => {
-                    collect_expr(p, e.as_ref());
+                    collect_expr(p, e);
                     collect_ty(p, ty);
                 }
                 Exp_::Annotate(e, ty) => {
-                    collect_expr(p, e.as_ref());
+                    collect_expr(p, e);
                     collect_ty(p, ty);
                 }
-                Exp_::Spec(s) => collect_spec(p, s),
+                Exp_::Spec(_) => {}
                 Exp_::UnresolvedError => {
                     unreachable!()
                 }
             }
         }
 
-        fn collect_spec(p: &mut Parser, spec_block: &SpecBlock) {
-            match &spec_block.value.target.value {
-                SpecBlockTarget_::Code => {}
-                SpecBlockTarget_::Module => {}
-                SpecBlockTarget_::Member(_, _) | SpecBlockTarget_::Schema(_, _) => {
-                    p.type_lambda_pair.push((
-                        spec_block.value.target.loc.start(),
-                        spec_block.value.target.loc.end(),
-                    ));
+        fn collect_match_pattern(p: &mut Parser, m: &MatchPattern) {
+            p.patterns.insert(m.loc.start());
+            match &m.value {
+                MatchPattern_::PositionalConstructor(_, patterns) => {
+                    for e in &patterns.value {
+                        match e {
+                            Ellipsis::Binder(m) => collect_match_pattern(p, m),
+                            Ellipsis::Ellipsis(_) => (),
+                        }
+                    }
                 }
-            }
-
-            for m in spec_block.value.members.iter() {
-                match &m.value {
-                    SpecBlockMember_::Condition {
-                        kind,
-                        properties: _,
-                        exp,
-                        additional_exps,
-                    } => {
-                        p.type_lambda_pair.push((kind.loc.start(), kind.loc.end()));
-                        collect_expr(p, exp);
-                        additional_exps.iter().for_each(|e| collect_expr(p, e));
-                    }
-                    SpecBlockMember_::Function {
-                        uninterpreted: _,
-                        name,
-                        signature,
-                        body,
-                    } => {
-                        p.type_lambda_pair
-                            .push((name.0.loc.end(), signature.return_type.loc.end()));
-                        match &body.value {
-                            FunctionBody_::Defined(s) => collect_seq(p, s),
-                            FunctionBody_::Native => {}
+                MatchPattern_::FieldConstructor(_, patterns) => {
+                    for e in &patterns.value {
+                        match e {
+                            Ellipsis::Binder((_, m)) => collect_match_pattern(p, m),
+                            Ellipsis::Ellipsis(_) => (),
                         }
                     }
-                    SpecBlockMember_::Variable {
-                        is_global: _,
-                        name,
-                        type_parameters: _,
-                        type_: _,
-                        init,
-                    } => {
-                        if let Some(init) = init {
-                            p.type_lambda_pair
-                                .push((name.loc.start(), init.loc.start() - 1))
-                        } else {
-                            p.type_lambda_pair.push((name.loc.start(), m.loc.end()));
-                        }
-                    }
-
-                    SpecBlockMember_::Let {
-                        name: _,
-                        post_state: _,
-                        def,
-                    } => collect_expr(p, def),
-                    SpecBlockMember_::Update { lhs, rhs } => {
-                        collect_expr(p, lhs);
-                        collect_expr(p, rhs);
-                    }
-                    SpecBlockMember_::Include { properties: _, exp } => {
-                        collect_expr(p, exp);
-                    }
-                    SpecBlockMember_::Apply {
-                        exp,
-                        patterns,
-                        exclusion_patterns,
-                    } => {
-                        for pat in patterns.iter().chain(exclusion_patterns.iter()) {
-                            for n in &pat.value.name_pattern {
-                                p.apple_name.insert(n.loc.start());
-                            }
-                            if let Some(x) = pat.value.name_pattern.last() {
-                                p.type_lambda_pair.push((x.loc.end(), pat.loc.end()));
-                            }
-                        }
-                        collect_expr(p, exp);
-                    }
-                    SpecBlockMember_::Pragma { properties: _ } => {}
+                }
+                MatchPattern_::Name(_, _) => (),
+                MatchPattern_::Literal(_) => (),
+                MatchPattern_::Or(m1, m2) => {
+                    p.pattern_or.insert(m1.loc.end());
+                    collect_match_pattern(p, m1);
+                    collect_match_pattern(p, m2);
+                }
+                MatchPattern_::At(_, m) => {
+                    collect_match_pattern(p, m);
                 }
             }
         }
+
         fn collect_const(p: &mut Parser, c: &Constant) {
             collect_ty(p, &c.signature);
             collect_expr(p, &c.value);
@@ -707,7 +693,7 @@ pub(crate) fn analyze_token_tree_length(token_tree: &[TokenTree], max: usize) ->
 
 // ===================================================================================================
 #[derive(Default, Debug)]
-pub struct CommentExtrator {
+pub struct CommentExtractor {
     pub comments: Vec<Comment>,
 }
 
@@ -727,16 +713,16 @@ pub enum CommentKind {
     BlockComment,
 }
 
-/// A comment extractor ,extrat all comment from move file
-/// include the start  and end tokens `//`,`*/`,etc.
+/// A comment extractor to extract all comment from move file
+/// include the start and end tokens `//`,`*/`,etc.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CommentExtratorErr {
+pub enum CommentExtractorErr {
     NewLineInQuote,
-    NotTermialState(ExtratorCommentState),
+    NotTerminalState(ExtractorCommentState),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ExtratorCommentState {
+pub enum ExtractorCommentState {
     /// init state
     Init,
     /// `/` has been seen,maybe a comment.
@@ -751,14 +737,14 @@ pub enum ExtratorCommentState {
     Quote,
 }
 
-impl CommentExtrator {
-    pub fn new(content: &str) -> Result<Self, CommentExtratorErr> {
+impl CommentExtractor {
+    pub fn new(content: &str) -> Result<Self, CommentExtractorErr> {
         if content.len() <= 1 {
             return Ok(Self::default());
         }
         let content = content.as_bytes();
 
-        let mut state = ExtratorCommentState::Init;
+        let mut state = ExtractorCommentState::Init;
         const NEW_LINE: u8 = 10;
         const SLASH: u8 = 47;
         const STAR: u8 = 42;
@@ -778,19 +764,19 @@ impl CommentExtrator {
                 });
                 comment.clear();
 
-                if state == ExtratorCommentState::InlineComment {
+                if state == ExtractorCommentState::InlineComment {
                     if depth == 0 {
-                        state = ExtratorCommentState::Init;
+                        state = ExtractorCommentState::Init;
                     } else {
-                        state = ExtratorCommentState::BlockComment;
+                        state = ExtractorCommentState::BlockComment;
                     }
                 } else {
                     if depth <= 1 {
                         depth = 0;
-                        state = ExtratorCommentState::Init;
+                        state = ExtractorCommentState::Init;
                     } else {
                         depth -= 1;
-                        state = ExtratorCommentState::BlockComment;
+                        state = ExtractorCommentState::BlockComment;
                     }
                 }
             };
@@ -803,45 +789,45 @@ impl CommentExtrator {
             //     index, state, *c as char, last_index
             // );
             match state {
-                ExtratorCommentState::Init => match *c {
+                ExtractorCommentState::Init => match *c {
                     SLASH => {
-                        state = ExtratorCommentState::OneSlash;
+                        state = ExtractorCommentState::OneSlash;
                     }
                     QUOTE => {
-                        state = ExtratorCommentState::Quote;
+                        state = ExtractorCommentState::Quote;
                     }
                     _ => {}
                 },
-                ExtratorCommentState::OneSlash => {
+                ExtractorCommentState::OneSlash => {
                     if *c == SLASH {
                         comment.push(SLASH);
                         comment.push(SLASH);
                         if depth == 0 {
-                            state = ExtratorCommentState::InlineComment;
+                            state = ExtractorCommentState::InlineComment;
                         } else {
-                            state = ExtratorCommentState::BlockComment;
+                            state = ExtractorCommentState::BlockComment;
                         }
                     } else if *c == STAR {
                         comment.push(SLASH);
                         comment.push(STAR);
                         depth += 1;
-                        state = ExtratorCommentState::BlockComment;
+                        state = ExtractorCommentState::BlockComment;
                     } else if depth == 0 {
-                        state = ExtratorCommentState::Init;
+                        state = ExtractorCommentState::Init;
                     } else {
-                        state = ExtratorCommentState::BlockComment;
+                        state = ExtractorCommentState::BlockComment;
                     }
                 }
-                ExtratorCommentState::BlockComment => {
+                ExtractorCommentState::BlockComment => {
                     if *c == STAR {
-                        state = ExtratorCommentState::OneStar;
+                        state = ExtractorCommentState::OneStar;
                     } else if *c == SLASH {
-                        state = ExtratorCommentState::OneSlash;
+                        state = ExtractorCommentState::OneSlash;
                     } else {
                         comment.push(*c);
                     }
                 }
-                ExtratorCommentState::OneStar => {
+                ExtractorCommentState::OneStar => {
                     if *c == SLASH {
                         comment.push(STAR);
                         comment.push(SLASH);
@@ -851,10 +837,10 @@ impl CommentExtrator {
                     } else {
                         comment.push(STAR);
                         comment.push(*c);
-                        state = ExtratorCommentState::BlockComment;
+                        state = ExtractorCommentState::BlockComment;
                     }
                 }
-                ExtratorCommentState::InlineComment => {
+                ExtractorCommentState::InlineComment => {
                     if *c == NEW_LINE || index == last_index {
                         if *c != NEW_LINE {
                             comment.push(*c);
@@ -864,7 +850,7 @@ impl CommentExtrator {
                         comment.push(*c);
                     }
                 }
-                ExtratorCommentState::Quote => {
+                ExtractorCommentState::Quote => {
                     // handle \" or handle \\
                     if *c == BLACK_SLASH
                         && content
@@ -875,17 +861,17 @@ impl CommentExtrator {
                         index += 2;
                         continue;
                     } else if *c == QUOTE {
-                        state = ExtratorCommentState::Init;
+                        state = ExtractorCommentState::Init;
                     } else if *c == NEW_LINE {
-                        // return Err(CommentExtratorErr::NewLineInQuote);
+                        // return Err(CommentExtractorErr::NewLineInQuote);
                         panic!("1")
                     }
                 }
             };
             index += 1;
         }
-        if state != ExtratorCommentState::Init {
-            return Err(CommentExtratorErr::NotTermialState(state));
+        if state != ExtractorCommentState::Init {
+            return Err(CommentExtractorErr::NotTerminalState(state));
         }
         Ok(Self { comments })
     }
@@ -895,8 +881,8 @@ impl CommentExtrator {
 mod comment_test {
     use crate::tools::syntax::parse_file_string;
     use move_command_line_common::files::FileHash;
-    use move_compiler::{shared::CompilationEnv, Flags};
-    use std::collections::BTreeSet;
+    use move_compiler::{editions::Edition, shared::CompilationEnv, Flags};
+    use std::collections::BTreeMap;
 
     use super::*;
     #[test]
@@ -907,10 +893,10 @@ mod comment_test {
             }
           }"#;
         let filehash = FileHash::empty();
-        let attrs: BTreeSet<String> = BTreeSet::new();
-        let mut env = CompilationEnv::new(Flags::testing(), attrs);
+        let attrs = BTreeMap::new();
+        let mut env = CompilationEnv::new(Flags::testing(), Vec::new(), attrs, None);
         let (defs, _) = parse_file_string(&mut env, filehash, content).unwrap();
-        let lexer = Lexer::new(content, filehash);
+        let lexer = Lexer::new(content, filehash, Edition::E2024_BETA);
         let parse = Parser::new(lexer, &defs);
         let token_tree = parse.parse_tokens();
         let s = serde_json::to_string(&token_tree).unwrap();
@@ -920,7 +906,7 @@ mod comment_test {
 
     #[test]
     fn test_comment_extrator_ok() {
-        let x = CommentExtrator::new(
+        let x = CommentExtractor::new(
             r#"
         // 111
     // 222
@@ -948,29 +934,29 @@ mod comment_test {
     }
     #[test]
     fn test_comment_extrator_ok2() {
-        let _x = CommentExtrator::new(r#"/* /* 1 */ */"#).unwrap();
+        let _x = CommentExtractor::new(r#"/* /* 1 */ */"#).unwrap();
     }
 
     #[test]
-    fn test_comment_extrator_err() {
+    fn test_comment_extractor_err() {
         let v = vec![
             (
                 r#" \" "#,
-                CommentExtratorErr::NotTermialState(ExtratorCommentState::Quote),
+                CommentExtractorErr::NotTerminalState(ExtractorCommentState::Quote),
             ),
             (
                 r#" \" 
                 "#,
-                CommentExtratorErr::NewLineInQuote,
+                CommentExtractorErr::NewLineInQuote,
             ),
             (
                 r#" /*  "#,
-                CommentExtratorErr::NotTermialState(ExtratorCommentState::BlockComment),
+                CommentExtractorErr::NotTerminalState(ExtractorCommentState::BlockComment),
             ),
         ];
 
         for (c, err) in v.iter() {
-            match CommentExtrator::new(*c) {
+            match CommentExtractor::new(*c) {
                 Ok(_) => unreachable!(),
                 Err(x) => assert_eq!(x, *err),
             }

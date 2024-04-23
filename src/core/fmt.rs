@@ -3,23 +3,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::core::token_tree::{
-    analyze_token_tree_length, Comment, CommentExtrator, CommentKind, Delimiter, NestKind,
-    NestKind_, Note, TokenTree,
+    analyze_token_tree_length, Comment, CommentExtractor, CommentKind, Delimiter, NestData,
+    NestKind, Note, TokenTree,
 };
 use crate::syntax_fmt::branch_fmt::{self, BranchExtractor, BranchKind};
 use crate::syntax_fmt::fun_fmt::FunExtractor;
-use crate::syntax_fmt::{big_block_fmt, expr_fmt, fun_fmt, spec_fmt};
+use crate::syntax_fmt::{big_block_fmt, expr_fmt, fun_fmt};
 use crate::tools::syntax::{self, parse_file_string};
 use crate::tools::utils::{FileLineMappingOneFile, Timer};
 use commentfmt::{Config, Verbosity};
 use move_command_line_common::files::FileHash;
 use move_compiler::diagnostics::Diagnostics;
-use move_compiler::parser::lexer::{Lexer, Tok};
+use move_compiler::editions::Edition;
+use move_compiler::parser::lexer::{Lexer, Tok as Token};
 use move_compiler::shared::CompilationEnv;
 use move_compiler::Flags;
 use std::cell::Cell;
 use std::cell::RefCell;
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use std::result::Result::*;
 
 pub enum FormatEnv {
@@ -40,7 +41,7 @@ pub struct FormatContext {
     pub content: String,
     pub env: FormatEnv,
     pub cur_module_name: String,
-    pub cur_tok: Tok,
+    pub current_token: Token,
 }
 
 impl FormatContext {
@@ -49,7 +50,7 @@ impl FormatContext {
             content,
             env,
             cur_module_name: "".to_string(),
-            cur_tok: Tok::Module,
+            current_token: Token::Module,
         }
     }
 
@@ -85,7 +86,7 @@ pub struct FormatConfig {
 
 impl Format {
     fn new(global_cfg: Config, content: &str, format_context: FormatContext) -> Self {
-        let ce: CommentExtrator = CommentExtrator::new(content).unwrap();
+        let ce: CommentExtractor = CommentExtractor::new(content).unwrap();
         let mut line_mapping = FileLineMappingOneFile::default();
         line_mapping.update(content);
         let syntax_extractor = SyntaxExtractor {
@@ -112,9 +113,9 @@ impl Format {
 
     fn generate_token_tree(&mut self, content: &str) -> Result<String, Diagnostics> {
         // let attrs: BTreeSet<String> = BTreeSet::new();
-        let mut env = CompilationEnv::new(Flags::testing(), BTreeSet::new());
+        let mut env = CompilationEnv::new(Flags::testing(), Vec::new(), BTreeMap::new(), None);
         let (defs, _) = parse_file_string(&mut env, FileHash::empty(), content)?;
-        let lexer = Lexer::new(content, FileHash::empty());
+        let lexer = Lexer::new(content, FileHash::empty(), Edition::E2024_BETA);
         let parse = crate::core::token_tree::Parser::new(lexer, &defs);
         self.token_tree = parse.parse_tokens();
         self.syntax_extractor.branch_extractor.preprocess(defs);
@@ -133,10 +134,10 @@ impl Format {
             self.global_cfg.clone(),
         );
 
-        if self.ret.clone().into_inner().contains("spec ") {
-            *self.ret.borrow_mut() =
-                spec_fmt::fmt_spec(self.ret.clone().into_inner(), self.global_cfg.clone());
-        }
+        // if self.ret.clone().into_inner().contains("spec ") {
+        //     *self.ret.borrow_mut() =
+        //         spec_fmt::fmt_spec(self.ret.clone().into_inner(), self.global_cfg.clone());
+        // }
         tracing::debug!("post_process -- fmt_big_block");
         *self.ret.borrow_mut() = big_block_fmt::fmt_big_block(self.ret.clone().into_inner());
         self.remove_trailing_whitespaces();
@@ -168,10 +169,10 @@ impl Format {
                 } => {}
                 TokenTree::Nested {
                     elements: _,
-                    kind,
+                    data: kind,
                     note: _,
                 } => {
-                    if kind.kind == NestKind_::Brace {
+                    if kind.kind == NestKind::Brace {
                         self.new_line(Some(t.end_pos()));
                         self.post_process();
                     }
@@ -185,7 +186,7 @@ impl Format {
     }
 
     fn need_new_line(
-        kind: NestKind_,
+        kind: NestKind,
         delimiter: Option<Delimiter>,
         _has_colon: bool,
         current: &TokenTree,
@@ -204,32 +205,32 @@ impl Format {
             } => (*tok, content.clone()),
             TokenTree::Nested {
                 elements: _,
-                kind,
+                data: kind,
                 note: _,
             } => (kind.kind.start_tok(), kind.kind.start_tok().to_string()),
         }) {
             match next_tok {
-                Tok::Friend
-                | Tok::Const
-                | Tok::Fun
-                | Tok::While
-                | Tok::Use
-                | Tok::Struct
-                | Tok::Spec
-                | Tok::Return
-                | Tok::Public
-                | Tok::Native
-                | Tok::Move
-                | Tok::Module
-                | Tok::Loop
-                | Tok::Let
-                | Tok::Invariant
-                | Tok::If
-                | Tok::Continue
-                | Tok::Break
-                | Tok::NumSign
-                | Tok::Abort => true,
-                Tok::Identifier => next_content.as_str() == "entry",
+                Token::Friend
+                | Token::Const
+                | Token::Fun
+                | Token::While
+                | Token::Use
+                | Token::Struct
+                | Token::Spec
+                | Token::Return
+                | Token::Public
+                | Token::Native
+                | Token::Move
+                | Token::Module
+                | Token::Loop
+                | Token::Let
+                | Token::Invariant
+                | Token::If
+                | Token::Continue
+                | Token::Break
+                | Token::NumSign
+                | Token::Abort => true,
+                Token::Identifier => next_content.as_str() == "entry",
                 _ => false,
             }
         } else {
@@ -246,10 +247,10 @@ impl Format {
             } => false,
             TokenTree::Nested {
                 elements: _,
-                kind,
+                data: kind,
                 note: _,
-            } => kind.kind == NestKind_::Brace,
-        } && kind == NestKind_::Brace
+            } => kind.kind == NestKind::Brace,
+        } && kind == NestKind::Brace
             && b_judge_next_token
         {
             return true;
@@ -258,7 +259,7 @@ impl Format {
     }
 
     fn need_new_line_for_each_token_in_nested(
-        kind: &NestKind,
+        kind: &NestData,
         elements: &[TokenTree],
         delimiter: Option<Delimiter>,
         has_colon: bool,
@@ -314,7 +315,7 @@ impl Format {
             } => (*tok, content.clone()),
             TokenTree::Nested {
                 elements: _,
-                kind,
+                data: kind,
                 note: _,
             } => (kind.kind.start_tok(), kind.kind.start_tok().to_string()),
         }) {
@@ -353,7 +354,7 @@ impl Format {
 
     fn get_new_line_mode_begin_nested(
         &self,
-        kind: &NestKind,
+        kind: &NestData,
         elements: &Vec<TokenTree>,
         note: &Option<Note>,
         delimiter: Option<Delimiter>,
@@ -365,7 +366,7 @@ impl Format {
 
         // 20240328 optimize
         // if it's branch with block, and block had more than one token, need new line
-        if kind.kind == NestKind_::Brace
+        if kind.kind == NestKind::Brace
             && elements.len() > 1
             && (self
                 .syntax_extractor
@@ -404,12 +405,12 @@ impl Format {
                 || (self.get_cur_line_len() + nested_token_len > self.global_cfg.max_width()
                     && !elements.is_empty())
         };
-        if new_line_mode && kind.kind != NestKind_::Type {
+        if new_line_mode && kind.kind != NestKind::Type {
             return (true, None);
         }
 
         match kind.kind {
-            NestKind_::Type => {
+            NestKind::Type => {
                 // added in 20240112: if type in fun header, not change new line
                 if self
                     .syntax_extractor
@@ -420,8 +421,8 @@ impl Format {
                 }
                 new_line_mode = nested_token_len > max_len_when_no_add_line;
             }
-            NestKind_::ParentTheses => {
-                if self.format_context.borrow().cur_tok == Tok::If {
+            NestKind::ParentTheses => {
+                if self.format_context.borrow().current_token == Token::If {
                     new_line_mode = false;
                 } else {
                     new_line_mode =
@@ -429,15 +430,15 @@ impl Format {
                     return (new_line_mode, Some(new_line_mode));
                 }
             }
-            NestKind_::Bracket => {
+            NestKind::Bracket => {
                 new_line_mode = nested_token_len > max_len_when_no_add_line;
             }
-            NestKind_::Lambda => {
+            NestKind::Lambda => {
                 if delimiter.is_none() && nested_token_len <= max_len_when_no_add_line {
                     new_line_mode = false;
                 }
             }
-            NestKind_::Brace => {
+            NestKind::Brace => {
                 new_line_mode = self.last_line().contains("module")
                     || nested_token_len > max_len_when_no_add_line;
             }
@@ -447,12 +448,12 @@ impl Format {
 
     fn add_new_line_after_nested_begin(
         &self,
-        kind: &NestKind,
+        kind: &NestData,
         elements: &[TokenTree],
         b_new_line_mode: bool,
     ) {
         if !b_new_line_mode {
-            if let NestKind_::Brace = kind.kind {
+            if let NestKind::Brace = kind.kind {
                 if elements.len() == 1 {
                     self.push_str(" ");
                 }
@@ -490,7 +491,7 @@ impl Format {
     ) {
         let TokenTree::Nested {
             elements,
-            kind,
+            data: kind,
             note: _,
         } = nested_token
         else {
@@ -500,7 +501,7 @@ impl Format {
         let next_t = elements.get(internal_token_idx + 1);
 
         if !new_line && token.simple_str().is_some() {
-            if let NestKind_::Brace = kind.kind {
+            if let NestKind::Brace = kind.kind {
                 if elements.len() == 1 {
                     self.push_str(" ");
                 }
@@ -524,7 +525,7 @@ impl Format {
                 None => true,
             };
             self.process_same_line_comment(token.end_pos(), process_tail_comment_of_line);
-        } else if let NestKind_::Brace = kind.kind {
+        } else if let NestKind::Brace = kind.kind {
             if elements.len() == 1 {
                 self.push_str(" ");
             }
@@ -533,7 +534,7 @@ impl Format {
 
     fn format_each_token_in_nested_elements(
         &self,
-        kind: &NestKind,
+        kind: &NestData,
         elements: &[TokenTree],
         delimiter: Option<Delimiter>,
         has_colon: bool,
@@ -541,7 +542,7 @@ impl Format {
     ) {
         let nested_token = TokenTree::Nested {
             elements: elements.to_owned(),
-            kind: *kind,
+            data: *kind,
             note: None,
         };
         let mut pound_sign = None;
@@ -565,7 +566,7 @@ impl Format {
                 pound_sign = Some(internal_token_idx)
             }
 
-            if Tok::Period == self.format_context.borrow().cur_tok {
+            if Token::Period == self.format_context.borrow().current_token {
                 let (continue_dot_cnt, index) =
                     expr_fmt::process_link_access(elements, internal_token_idx + 1);
                 if continue_dot_cnt > 3 && index > internal_token_idx {
@@ -603,7 +604,7 @@ impl Format {
     fn format_nested_token(&self, token: &TokenTree, next_token: Option<&TokenTree>) {
         if let TokenTree::Nested {
             elements,
-            kind,
+            data: kind,
             note,
         } = token
         {
@@ -611,7 +612,7 @@ impl Format {
             let (b_new_line_mode, opt_mode) =
                 self.get_new_line_mode_begin_nested(kind, elements, note, delimiter);
             let b_add_indent = !note.map(|x| x == Note::ModuleAddress).unwrap_or_default();
-            let nested_token_head = self.format_context.borrow().cur_tok;
+            let nested_token_head = self.format_context.borrow().current_token;
 
             if b_new_line_mode {
                 tracing::debug!(
@@ -620,7 +621,7 @@ impl Format {
                 );
             }
 
-            if Tok::NumSign == nested_token_head {
+            if Token::NumSign == nested_token_head {
                 self.push_str(fun_fmt::process_fun_annotation(*kind, elements.to_vec()));
                 return;
             }
@@ -639,7 +640,7 @@ impl Format {
             }
 
             // step4 -- format elements
-            let need_change_line_for_each_item_in_paren = if NestKind_::ParentTheses == kind.kind {
+            let need_change_line_for_each_item_in_paren = if NestKind::ParentTheses == kind.kind {
                 if opt_mode.is_none() {
                     !expr_fmt::judge_simple_paren_expr(kind, elements, self.global_cfg.clone())
                 } else {
@@ -681,7 +682,7 @@ impl Format {
             // step7
             if b_new_line_mode || had_rm_added_new_line {
                 tracing::debug!("end_of_nested_block, b_new_line_mode = true");
-                if nested_token_head != Tok::If {
+                if nested_token_head != Token::If {
                     self.new_line(Some(kind.end_pos));
                 }
             }
@@ -717,7 +718,7 @@ impl Format {
         {
             // added in 20240115
             // updated in 20240124
-            if Tok::LBrace != *tok
+            if Token::LBrace != *tok
                 && self
                     .syntax_extractor
                     .branch_extractor
@@ -729,7 +730,7 @@ impl Format {
             }
 
             // process `else if`
-            if *tok == Tok::Else
+            if *tok == Token::Else
                 && next_token.is_some()
                 && (next_token.unwrap().simple_str().unwrap_or_default() == "if"
                     || self
@@ -796,7 +797,7 @@ impl Format {
                     .borrow_mut()
                     .set_env(FormatEnv::FormatExp);
             }
-            self.format_context.borrow_mut().cur_tok = *tok;
+            self.format_context.borrow_mut().current_token = *tok;
 
             let mut split_line_after_content = false;
             if self.judge_change_new_line_when_over_limits(*tok, *note, next_token) {
@@ -806,9 +807,9 @@ impl Format {
                     content
                 );
 
-                if matches!(*tok, |Tok::Equal| Tok::EqualEqual
-                    | Tok::EqualEqualGreater
-                    | Tok::LessEqualEqualGreater)
+                if matches!(*tok, |Token::Equal| Token::EqualEqual
+                    | Token::EqualEqualGreater
+                    | Token::LessEqualEqualGreater)
                 {
                     self.push_str(content.as_str());
                     split_line_after_content = true;
@@ -852,7 +853,7 @@ impl Format {
         match token {
             TokenTree::Nested {
                 elements: _,
-                kind: _,
+                data: _,
                 note: _,
             } => self.format_nested_token(token, next_token),
             TokenTree::SimpleToken {
@@ -883,7 +884,7 @@ impl Format {
                 // comment
                 fun func() {}
                 */
-                if self.format_context.borrow().cur_tok != Tok::NumSign {
+                if self.format_context.borrow().current_token != Token::NumSign {
                     self.new_line(None);
                 }
             }
@@ -1055,7 +1056,9 @@ impl Format {
                 *ret = *pos;
             }
             TokenTree::Nested {
-                elements: _, kind, ..
+                elements: _,
+                data: kind,
+                ..
             } => {
                 *ret = kind.start_pos;
             }
@@ -1152,11 +1155,11 @@ impl Format {
 
     fn maybe_meet_new_module_in_same_file(
         &self,
-        tok: Tok,
+        tok: Token,
         next_token: Option<&TokenTree>,
         pos: u32,
     ) {
-        if Tok::Module == tok {
+        if Token::Module == tok {
             // tracing::debug!("SimpleToken[{:?}], cur_module_name = {:?}", content,  self.format_context.borrow_mut().cur_module_name);
             if !self.format_context.borrow_mut().cur_module_name.is_empty()
                 && (self.translate_line(pos) - self.cur_line.get()) >= 1
@@ -1187,7 +1190,7 @@ impl Format {
             .unwrap_or_default()
     }
 
-    fn tok_suitable_for_new_line(tok: Tok, note: Option<Note>, next: Option<&TokenTree>) -> bool {
+    fn tok_suitable_for_new_line(tok: Token, note: Option<Note>, next: Option<&TokenTree>) -> bool {
         // special case
         if next
             .and_then(|x| match x {
@@ -1199,9 +1202,9 @@ impl Format {
                 } => None,
                 TokenTree::Nested {
                     elements: _,
-                    kind,
+                    data: kind,
                     note: _,
-                } => Some(kind.kind == NestKind_::Type),
+                } => Some(kind.kind == NestKind::Type),
             })
             .unwrap_or_default()
         {
@@ -1210,23 +1213,23 @@ impl Format {
         }
         let is_bin = note.map(|x| x == Note::BinaryOP).unwrap_or_default();
         let ret = match tok {
-            Tok::Less | Tok::Amp | Tok::Star | Tok::Greater if is_bin => true,
-            Tok::ExclaimEqual
-            | Tok::Percent
-            | Tok::AmpAmp
-            | Tok::Plus
-            | Tok::Minus
-            | Tok::Period
-            | Tok::Slash
-            | Tok::LessEqual
-            | Tok::LessLess
-            | Tok::Equal
-            | Tok::EqualEqual
-            | Tok::EqualEqualGreater
-            | Tok::LessEqualEqualGreater
-            | Tok::GreaterEqual
-            | Tok::GreaterGreater
-            | Tok::NumValue => true,
+            Token::Less | Token::Amp | Token::Star | Token::Greater if is_bin => true,
+            Token::ExclaimEqual
+            | Token::Percent
+            | Token::AmpAmp
+            | Token::Plus
+            | Token::Minus
+            | Token::Period
+            | Token::Slash
+            | Token::LessEqual
+            | Token::LessLess
+            | Token::Equal
+            | Token::EqualEqual
+            | Token::EqualEqualGreater
+            | Token::LessEqualEqualGreater
+            | Token::GreaterEqual
+            | Token::GreaterGreater
+            | Token::NumValue => true,
             _ => false,
         };
         tracing::debug!("tok_suitable_for_new_line ret = {}", ret);
@@ -1237,23 +1240,22 @@ impl Format {
         let last_ret = self.last_line();
         let mut tokens_len = 0;
         let mut special_key = false;
-        let mut lexer = Lexer::new(&last_ret, FileHash::empty());
+        let mut lexer = Lexer::new(&last_ret, FileHash::empty(), Edition::E2024_BETA);
         lexer.advance().unwrap();
-        while lexer.peek() != Tok::EOF {
+        while lexer.peek() != Token::EOF {
             tokens_len += lexer.content().len();
             if !special_key {
                 special_key = matches!(
                     lexer.peek(),
-                    Tok::If
-                        | Tok::LBrace
-                        | Tok::Module
-                        | Tok::Script
-                        | Tok::Struct
-                        | Tok::Fun
-                        | Tok::Public
-                        | Tok::Inline
-                        | Tok::Colon
-                        | Tok::Spec
+                    Token::If
+                        | Token::LBrace
+                        | Token::Module
+                        | Token::Struct
+                        | Token::Enum
+                        | Token::Fun
+                        | Token::Public
+                        | Token::Colon
+                        | Token::Spec
                 );
             }
             lexer.advance().unwrap();
@@ -1268,7 +1270,7 @@ impl Format {
 
     fn judge_change_new_line_when_over_limits(
         &self,
-        tok: Tok,
+        tok: Token,
         note: Option<Note>,
         next: Option<&TokenTree>,
     ) -> bool {
@@ -1311,7 +1313,7 @@ pub fn format_entry(content: impl AsRef<str>, config: Config) -> Result<String, 
 
     {
         // https://github.com/movebit/movefmt/issues/2
-        let mut env = CompilationEnv::new(Flags::testing(), BTreeSet::new());
+        let mut env = CompilationEnv::new(Flags::testing(), Vec::new(), BTreeMap::new(), None);
         let _ = parse_file_string(&mut env, FileHash::empty(), content)?;
     }
 
