@@ -180,7 +180,7 @@ fn extract_tokens(content: &str) -> Result<Vec<ExtractToken>, Vec<String>> {
             return Err(ret);
         }
     };
-    let lexer = Lexer::new(content, filehash, Edition::E2024_BETA);
+    let lexer = Lexer::new(content, filehash, Edition::DEVELOPMENT);
     let mut ret = Vec::new();
     let parse = movefmt::core::token_tree::Parser::new(lexer, &defs);
     let token_tree = parse.parse_tokens();

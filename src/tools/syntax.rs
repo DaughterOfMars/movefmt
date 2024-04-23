@@ -1262,9 +1262,7 @@ fn parse_match_arm(context: &mut Context) -> Result<MatchArm, Box<Diagnostic>> {
     } else {
         None
     };
-    // TODO: use Tok::EqualGreater when possible
-    consume_token(context.tokens, Tok::Equal)?;
-    consume_token(context.tokens, Tok::Greater)?;
+    consume_token(context.tokens, Tok::EqualGreater)?;
     let rhs = Box::new(parse_term(context)?);
     match_token(context.tokens, Tok::Comma)?;
     let end_loc = context.tokens.previous_end_loc();
@@ -2611,7 +2609,7 @@ pub fn parse_file_string(
     file_hash: FileHash,
     input: &str,
 ) -> Result<(Vec<Definition>, MatchedFileCommentMap), Diagnostics> {
-    let mut tokens = Lexer::new(input, file_hash, Edition::E2024_BETA);
+    let mut tokens = Lexer::new(input, file_hash, Edition::DEVELOPMENT);
     match tokens.advance() {
         Err(err) => Err(Diagnostics::from(vec![*err])),
         Ok(..) => Ok(()),

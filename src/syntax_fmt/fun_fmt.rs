@@ -157,7 +157,7 @@ pub(crate) fn fun_header_specifier_fmt(specifier: &str, indent_str: &str) -> Str
     tracing::debug!("fun_specifier_str = {}", specifier);
 
     let mut fun_specifiers_code = vec![];
-    let mut lexer = Lexer::new(specifier, FileHash::empty(), Edition::E2024_BETA);
+    let mut lexer = Lexer::new(specifier, FileHash::empty(), Edition::DEVELOPMENT);
     lexer.advance().unwrap();
     while lexer.peek() != Tok::EOF {
         fun_specifiers_code.push((
@@ -326,7 +326,7 @@ pub(crate) fn process_block_comment_before_fun_header(
     for (fun_idx, (fun_start_line, _)) in fun_extractor.loc_line_vec.iter().enumerate() {
         let fun_header_str =
             get_nth_line(buf.as_str(), *fun_start_line as usize).unwrap_or_default();
-        let mut lexer = Lexer::new(fun_header_str, FileHash::empty(), Edition::E2024_BETA);
+        let mut lexer = Lexer::new(fun_header_str, FileHash::empty(), Edition::DEVELOPMENT);
         lexer.advance().unwrap();
         if lexer.peek() != Tok::EOF && !fun_header_str[0..lexer.start_loc()].trim_start().is_empty()
         {
@@ -375,7 +375,7 @@ pub(crate) fn process_fun_header_too_long(fmt_buffer: String, config: Config) ->
         }
 
         let mut insert_loc = ret_ty_loc.end() as usize - fun_loc.start() as usize;
-        let mut lexer = Lexer::new(fun_name_str, FileHash::empty(), Edition::E2024_BETA);
+        let mut lexer = Lexer::new(fun_name_str, FileHash::empty(), Edition::DEVELOPMENT);
         lexer.advance().unwrap();
         while lexer.peek() != Tok::EOF {
             if lexer.peek() == Tok::Colon {
@@ -444,7 +444,7 @@ pub(crate) fn process_fun_ret_ty(fmt_buffer: String, config: Config) -> String {
                 .nth(fun_extractor.loc_line_vec[fun_idx].0 as usize)
                 .unwrap_or_default();
             let ret_ty_str = fun_name_str.lines().last().unwrap_or_default();
-            let mut lexer = Lexer::new(ret_ty_str, FileHash::empty(), Edition::E2024_BETA);
+            let mut lexer = Lexer::new(ret_ty_str, FileHash::empty(), Edition::DEVELOPMENT);
             lexer.advance().unwrap();
             if lexer.peek() != Tok::Colon {
                 continue;

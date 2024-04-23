@@ -192,9 +192,9 @@ impl BranchExtractor {
 
     fn need_new_line_in_then_without_brace(
         &self,
-        cur_line: String,
+        cur_line: &String,
         then_start_pos: ByteIndex,
-        config: Config,
+        config: &Config,
     ) -> bool {
         for then_loc in &self.com_if_else.then_loc_vec {
             if then_loc.start() == then_start_pos {
@@ -221,9 +221,9 @@ impl BranchExtractor {
 
     fn need_new_line_after_else(
         &self,
-        cur_line: String,
+        cur_line: &String,
         else_start_pos: ByteIndex,
-        config: Config,
+        config: &Config,
     ) -> bool {
         for (else_loc_idx, else_loc) in self.com_if_else.else_loc_vec.iter().enumerate() {
             if else_loc.start() == else_start_pos {
@@ -266,17 +266,9 @@ impl BranchExtractor {
         false
     }
 
-    fn need_new_line_after_arm(
-        &self,
-        cur_line: String,
-        arm_start_pos: ByteIndex,
-        config: Config,
-    ) -> bool {
+    fn need_new_line_after_arm(&self, arm_start_pos: ByteIndex) -> bool {
         for arm_loc in &self.match_block.arm_loc_vec {
             if arm_loc.start() == arm_start_pos {
-                let has_added = cur_line.len() as u32 + arm_loc.end() - arm_loc.start()
-                    > config.max_width() as u32;
-
                 let new_line_cnt = if self
                     .added_new_line_branch
                     .borrow()
@@ -288,8 +280,8 @@ impl BranchExtractor {
                 };
                 self.added_new_line_branch
                     .borrow_mut()
-                    .insert(arm_loc.end(), new_line_cnt + has_added as usize);
-                return has_added;
+                    .insert(arm_loc.end(), new_line_cnt + 1);
+                return true;
             }
         }
         false
@@ -297,13 +289,13 @@ impl BranchExtractor {
 
     pub fn need_new_line_after_branch(
         &self,
-        cur_line: String,
+        cur_line: &String,
         branch_start_pos: ByteIndex,
-        config: Config,
+        config: &Config,
     ) -> bool {
-        self.need_new_line_in_then_without_brace(cur_line.clone(), branch_start_pos, config.clone())
-            || self.need_new_line_after_else(cur_line.clone(), branch_start_pos, config.clone())
-            || self.need_new_line_after_arm(cur_line.clone(), branch_start_pos, config.clone())
+        self.need_new_line_in_then_without_brace(&cur_line, branch_start_pos, &config)
+            || self.need_new_line_after_else(&cur_line, branch_start_pos, &config)
+            || self.need_new_line_after_arm(branch_start_pos)
     }
 
     fn added_new_line_in_then_without_brace(&self, then_end_pos: ByteIndex) -> usize {
@@ -453,7 +445,7 @@ pub fn split_if_else_in_let_block(fmt_buffer: String, config: Config) -> String 
 
     let get_else_pos = |let_if_else_loc: Loc, else_branch_in_let_loc: Loc| {
         let branch_str = &fmt_buffer[0..let_if_else_loc.end() as usize];
-        let mut lexer = Lexer::new(branch_str, FileHash::empty(), Edition::E2024_BETA);
+        let mut lexer = Lexer::new(branch_str, FileHash::empty(), Edition::DEVELOPMENT);
         lexer.advance().unwrap();
         let mut else_in_let_vec = vec![];
         while lexer.peek() != Tok::EOF {

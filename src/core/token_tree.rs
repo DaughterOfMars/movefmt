@@ -898,7 +898,7 @@ mod comment_test {
         let attrs = BTreeMap::new();
         let mut env = CompilationEnv::new(Flags::testing(), Vec::new(), attrs, None);
         let (defs, _) = parse_file_string(&mut env, filehash, content).unwrap();
-        let lexer = Lexer::new(content, filehash, Edition::E2024_BETA);
+        let lexer = Lexer::new(content, filehash, Edition::DEVELOPMENT);
         let parse = Parser::new(lexer, &defs);
         let token_tree = parse.parse_tokens();
         let s = serde_json::to_string(&token_tree).unwrap();

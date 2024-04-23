@@ -112,7 +112,7 @@ impl Format {
     fn generate_token_tree(&mut self, content: &str) -> Result<String, Diagnostics> {
         let mut env = CompilationEnv::new(Flags::testing(), Vec::new(), BTreeMap::new(), None);
         let (defs, _) = parse_file_string(&mut env, FileHash::empty(), content)?;
-        let lexer = Lexer::new(content, FileHash::empty(), Edition::E2024_BETA);
+        let lexer = Lexer::new(content, FileHash::empty(), Edition::DEVELOPMENT);
         let parse = crate::core::token_tree::Parser::new(lexer, &defs);
         self.token_tree = parse.parse_tokens();
         self.syntax_extractor.branch_extractor.preprocess(defs);
@@ -722,7 +722,7 @@ impl Format {
                 && self
                     .syntax_extractor
                     .branch_extractor
-                    .need_new_line_after_branch(self.last_line(), *pos, self.global_cfg.clone())
+                    .need_new_line_after_branch(&self.last_line(), *pos, &self.global_cfg)
             {
                 tracing::debug!("need_new_line_after_branch[{:?}], add a new line", content);
                 self.inc_depth();
@@ -1240,7 +1240,7 @@ impl Format {
         let last_ret = self.last_line();
         let mut tokens_len = 0;
         let mut special_key = false;
-        let mut lexer = Lexer::new(&last_ret, FileHash::empty(), Edition::E2024_BETA);
+        let mut lexer = Lexer::new(&last_ret, FileHash::empty(), Edition::DEVELOPMENT);
         lexer.advance().unwrap();
         while lexer.peek() != Token::EOF {
             tokens_len += lexer.content().len();
