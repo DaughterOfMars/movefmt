@@ -20,6 +20,7 @@ use thiserror::Error;
 use tracing_subscriber::EnvFilter;
 
 fn main() {
+    dotenvy::dotenv().ok();
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_env("MOVEFMT_LOG"))
         .init();
@@ -240,9 +241,8 @@ fn format(files: Vec<PathBuf>, options: &GetOptsOptions) -> Result<i32> {
                     }
                 }
             }
-            Err(_) => {
-                // https://github.com/movebit/movefmt/issues/2
-                tracing::error!("file '{:?}' skipped because of parse not ok", file);
+            Err(e) => {
+                tracing::error!("file '{file:?}' skipped: {e:#?}");
             }
         }
     }

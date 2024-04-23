@@ -27,14 +27,12 @@ pub enum FormatEnv {
     FormatModule,
     FormatUse,
     FormatStruct,
+    FormatEnum,
     FormatExp,
     FormatTuple,
     FormatList,
     FormatLambda,
     FormatFun,
-    FormatSpecModule,
-    FormatSpecStruct,
-    FormatSpecFun,
     FormatDefault,
 }
 pub struct FormatContext {
@@ -112,7 +110,6 @@ impl Format {
     }
 
     fn generate_token_tree(&mut self, content: &str) -> Result<String, Diagnostics> {
-        // let attrs: BTreeSet<String> = BTreeSet::new();
         let mut env = CompilationEnv::new(Flags::testing(), Vec::new(), BTreeMap::new(), None);
         let (defs, _) = parse_file_string(&mut env, FileHash::empty(), content)?;
         let lexer = Lexer::new(content, FileHash::empty(), Edition::E2024_BETA);
@@ -216,6 +213,7 @@ impl Format {
                 | Token::While
                 | Token::Use
                 | Token::Struct
+                | Token::Enum
                 | Token::Spec
                 | Token::Return
                 | Token::Public
@@ -359,9 +357,10 @@ impl Format {
         note: &Option<Note>,
         delimiter: Option<Delimiter>,
     ) -> (bool, Option<bool>) {
-        let stct_def = note
+        let struct_def = note
             .map(|x| x == Note::StructDefinition)
             .unwrap_or_default();
+        let enum_def = note.map(|x| x == Note::EnumDefinition).unwrap_or_default();
         let fun_body = note.map(|x| x == Note::FunBody).unwrap_or_default();
 
         // 20240328 optimize
@@ -400,7 +399,8 @@ impl Format {
             delimiter
                 .map(|x| x == Delimiter::Semicolon)
                 .unwrap_or_default()
-                || (stct_def && !elements.is_empty())
+                || (struct_def && !elements.is_empty())
+                || (enum_def && !elements.is_empty())
                 || fun_body
                 || (self.get_cur_line_len() + nested_token_len > self.global_cfg.max_width()
                     && !elements.is_empty())

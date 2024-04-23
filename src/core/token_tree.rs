@@ -127,19 +127,21 @@ pub enum Note {
     BinaryOP,
     /// This is a struct definition.
     StructDefinition,
+    /// This is an enum definition.
+    EnumDefinition,
     /// This is a function body.
     FunBody,
-    /// This is a apply name in `apply` statement.
+    /// This is a name in an `apply` statement.
     ApplyName,
-    /// This is a address that contained modules.
+    /// This is a address that contains modules.
     ModuleAddress,
     /// default
-    Unkownwn,
+    Unknown,
 }
 
 impl Default for Note {
     fn default() -> Self {
-        Note::Unkownwn
+        Note::Unknown
     }
 }
 

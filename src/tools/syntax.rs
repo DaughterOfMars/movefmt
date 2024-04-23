@@ -2124,7 +2124,9 @@ fn parse_variant_def(context: &mut Context) -> Result<VariantDefinition, Box<Dia
     context.tokens.match_doc_comments();
     let start_loc = context.tokens.start_loc();
     let name = VariantName(parse_identifier(context)?);
-    let fields = if context.tokens.peek() == Tok::LParen {
+    let fields = if context.tokens.peek() == Tok::Comma {
+        VariantFields::Empty
+    } else if context.tokens.peek() == Tok::LParen {
         VariantFields::Positional(parse_comma_list(
             context,
             Tok::LParen,
