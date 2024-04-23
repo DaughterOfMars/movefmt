@@ -1145,7 +1145,7 @@ fn parse_term(context: &mut Context) -> Result<Exp, Box<Diagnostic>> {
 fn is_control_exp(tok: Tok) -> bool {
     matches!(
         tok,
-        Tok::If | Tok::While | Tok::Loop | Tok::Return | Tok::Abort
+        Tok::If | Tok::Match | Tok::While | Tok::Loop | Tok::Return | Tok::Abort
     )
 }
 
@@ -1191,6 +1191,27 @@ fn parse_control_exp(context: &mut Context) -> Result<(Exp, bool), Box<Diagnosti
             };
             (Exp_::IfElse(eb, Box::new(et), ef), ends_in_block)
         }
+        Tok::Match => {
+            context.tokens.advance()?;
+            consume_token(context.tokens, Tok::LParen)?;
+            let exp = Box::new(parse_term(context)?);
+            consume_token(context.tokens, Tok::RParen)?;
+            let start_loc = context.tokens.start_loc();
+            consume_token(context.tokens, Tok::LBrace)?;
+            let mut arms = Vec::new();
+            while context.tokens.peek() != Tok::RBrace {
+                arms.push(parse_match_arm(context)?);
+            }
+            consume_token(context.tokens, Tok::RBrace)?;
+            let end_loc = context.tokens.previous_end_loc();
+            (
+                Exp_::Match(
+                    exp,
+                    spanned(context.tokens.file_hash(), start_loc, end_loc, arms),
+                ),
+                true,
+            )
+        }
         Tok::While => {
             context.tokens.advance()?;
             consume_token(context.tokens, Tok::LParen)?;
@@ -1228,6 +1249,134 @@ fn parse_control_exp(context: &mut Context) -> Result<(Exp, bool), Box<Diagnosti
     let end_loc = context.tokens.previous_end_loc();
     let exp = spanned(context.tokens.file_hash(), start_loc, end_loc, exp_);
     Ok((exp, ends_in_block))
+}
+
+fn parse_match_arm(context: &mut Context) -> Result<MatchArm, Box<Diagnostic>> {
+    let start_loc = context.tokens.start_loc();
+    let pattern = parse_pattern(context)?;
+    let guard = if match_token(context.tokens, Tok::If)? {
+        consume_token(context.tokens, Tok::LParen)?;
+        let exp = Box::new(parse_exp(context)?);
+        consume_token(context.tokens, Tok::RParen)?;
+        Some(exp)
+    } else {
+        None
+    };
+    // TODO: use Tok::EqualGreater when possible
+    consume_token(context.tokens, Tok::Equal)?;
+    consume_token(context.tokens, Tok::Greater)?;
+    let rhs = Box::new(parse_term(context)?);
+    match_token(context.tokens, Tok::Comma)?;
+    let end_loc = context.tokens.previous_end_loc();
+    Ok(MatchArm {
+        loc: make_loc(context.tokens.file_hash(), start_loc, end_loc),
+        value: MatchArm_ {
+            pattern,
+            guard,
+            rhs,
+        },
+    })
+}
+
+// Parse a pattern:
+//      Pattern =
+//          <NameAccessChain> <OptionalTypeArgs> "(" Comma<Pattern> ")"
+//          | <NameAccessChain> <OptionalTypeArgs> "{" Comma<Field, Pattern> "}"
+//          | <NameAccessChain> <OptionalTypeArgs>
+//          | <Literal>
+//          | <Pattern> "|" <Pattern>
+//          | <Var> "@" <Pattern>
+fn parse_pattern(context: &mut Context) -> Result<MatchPattern, Box<Diagnostic>> {
+    let start_loc = context.tokens.start_loc();
+    let pattern = if let Some(value) = maybe_parse_value(context)? {
+        MatchPattern_::Literal(value)
+    } else {
+        let next_tok = context.tokens.lookahead()?;
+        match next_tok {
+            Tok::AtSign => {
+                let var = parse_var(context)?;
+                context.tokens.advance()?;
+                MatchPattern_::At(var, Box::new(parse_pattern(context)?))
+            }
+            Tok::Pipe => {
+                let p1 = parse_pattern(context)?;
+                context.tokens.advance()?;
+                let p2 = parse_pattern(context)?;
+                MatchPattern_::Or(Box::new(p1), Box::new(p2))
+            }
+            _ => {
+                let name = parse_name_access_chain(context, false, || "a variable or type name")?;
+                parse_optional_type_args(context)?;
+                match context.tokens.peek() {
+                    Tok::LParen => {
+                        let args = parse_comma_list(
+                            context,
+                            Tok::LParen,
+                            Tok::RParen,
+                            parse_positional_pattern,
+                            "a positional pattern",
+                        )?;
+                        let end_loc = context.tokens.previous_end_loc();
+                        MatchPattern_::PositionalConstructor(
+                            name,
+                            spanned(context.tokens.file_hash(), start_loc, end_loc, args),
+                        )
+                    }
+                    Tok::LBrace => {
+                        let args = parse_comma_list(
+                            context,
+                            Tok::LBrace,
+                            Tok::RBrace,
+                            parse_field_pattern,
+                            "a positional pattern",
+                        )?;
+                        let end_loc = context.tokens.previous_end_loc();
+                        MatchPattern_::FieldConstructor(
+                            name,
+                            spanned(context.tokens.file_hash(), start_loc, end_loc, args),
+                        )
+                    }
+                    _ => MatchPattern_::Name(None, name),
+                }
+            }
+        }
+    };
+    let end_loc = context.tokens.previous_end_loc();
+    Ok(MatchPattern {
+        loc: make_loc(context.tokens.file_hash(), start_loc, end_loc),
+        value: pattern,
+    })
+}
+
+// Parse a field name optionally followed by a colon and a pattern:
+//      FieldPattern = <Field> <":" <Pattern>>? | ".."
+//
+// If the binding is not specified, the default is to use a variable
+// with the same name as the field.
+fn parse_field_pattern(
+    context: &mut Context,
+) -> Result<Ellipsis<(Field, MatchPattern)>, Box<Diagnostic>> {
+    if let Some(loc) = consume_optional_token_with_loc(context.tokens, Tok::PeriodPeriod)? {
+        return Ok(Ellipsis::Ellipsis(loc));
+    }
+    let f = parse_field(context)?;
+    let arg = if match_token(context.tokens, Tok::Colon)? {
+        parse_pattern(context)?
+    } else {
+        todo!("currently types must be specified in field patterns")
+    };
+    Ok(Ellipsis::Binder((f, arg)))
+}
+
+// Parse a pattern or an ellipsis:
+//      PosPattern = <Pattern> | ".."
+fn parse_positional_pattern(
+    context: &mut Context,
+) -> Result<Ellipsis<MatchPattern>, Box<Diagnostic>> {
+    if let Some(loc) = consume_optional_token_with_loc(context.tokens, Tok::PeriodPeriod)? {
+        return Ok(Ellipsis::Ellipsis(loc));
+    }
+    Ok(Ellipsis::Binder(parse_pattern(context)?))
 }
 
 // Parse a pack, call, or other reference to a name:

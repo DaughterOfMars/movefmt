@@ -13,7 +13,7 @@ use move_ir_types::location::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-#[derive(Debug)]
+#[derive(Default, Debug)]
 pub struct LetIfElseBlock {
     pub let_if_else_block_loc_vec: Vec<Loc>,
     pub then_in_let_loc_vec: Vec<Loc>,
@@ -25,7 +25,7 @@ pub struct LetIfElseBlock {
     pub else_in_let: Vec<lsp_types::Range>,
 }
 
-#[derive(Debug)]
+#[derive(Default, Debug)]
 pub struct ComIfElseBlock {
     pub if_else_blk_loc_vec: Vec<Loc>,
     pub then_loc_vec: Vec<Loc>,
@@ -33,16 +33,24 @@ pub struct ComIfElseBlock {
     pub else_with_if_vec: Vec<bool>,
 }
 
+#[derive(Default, Debug)]
+pub struct MatchBlock {
+    pub match_block_loc_vec: Vec<Loc>,
+    pub arm_loc_vec: Vec<Loc>,
+}
+
 #[derive(Debug)]
 pub enum BranchKind {
     LetIfElse,
     ComIfElse,
+    MatchBlock,
 }
 
 #[derive(Debug)]
 pub struct BranchExtractor {
     pub let_if_else: LetIfElseBlock,
     pub com_if_else: ComIfElseBlock,
+    pub match_block: MatchBlock,
     pub cur_kind: BranchKind,
     pub source: String,
     pub line_mapping: FileLineMappingOneFile,
@@ -51,25 +59,10 @@ pub struct BranchExtractor {
 
 impl BranchExtractor {
     pub fn new(fmt_buffer: String, cur_kind: BranchKind) -> Self {
-        let let_if_else = LetIfElseBlock {
-            let_if_else_block_loc_vec: vec![],
-            then_in_let_loc_vec: vec![],
-            else_in_let_loc_vec: vec![],
-
-            let_if_else_block: vec![],
-            if_cond_in_let: vec![],
-            then_in_let: vec![],
-            else_in_let: vec![],
-        };
-        let com_if_else = ComIfElseBlock {
-            if_else_blk_loc_vec: vec![],
-            then_loc_vec: vec![],
-            else_loc_vec: vec![],
-            else_with_if_vec: vec![],
-        };
         let mut this_branch_extractor = Self {
-            let_if_else,
-            com_if_else,
+            let_if_else: Default::default(),
+            com_if_else: Default::default(),
+            match_block: Default::default(),
             source: fmt_buffer.clone(),
             line_mapping: FileLineMappingOneFile::default(),
             cur_kind,
@@ -87,11 +80,11 @@ impl BranchExtractor {
     }
 
     fn collect_expr(&mut self, e: &Exp) {
-        if let Exp_::IfElse(c, then_, Some(eles)) = &e.value {
+        if let Exp_::IfElse(c, then_, Some(else_)) = &e.value {
             if let BranchKind::LetIfElse = self.cur_kind {
                 self.let_if_else.let_if_else_block_loc_vec.push(e.loc);
                 self.let_if_else.then_in_let_loc_vec.push(then_.loc);
-                self.let_if_else.else_in_let_loc_vec.push(eles.loc);
+                self.let_if_else.else_in_let_loc_vec.push(else_.loc);
 
                 self.let_if_else
                     .let_if_else_block
@@ -104,22 +97,31 @@ impl BranchExtractor {
                     .push(self.get_loc_range(then_.loc));
                 self.let_if_else
                     .else_in_let
-                    .push(self.get_loc_range(eles.loc));
+                    .push(self.get_loc_range(else_.loc));
             }
         }
-        if let Exp_::IfElse(_, then_, eles_opt) = &e.value {
+        if let Exp_::IfElse(_, then_, else_opt) = &e.value {
             if let BranchKind::ComIfElse = self.cur_kind {
                 self.com_if_else.if_else_blk_loc_vec.push(e.loc);
                 self.com_if_else.then_loc_vec.push(then_.loc);
                 self.collect_expr(then_.as_ref());
-                if let Some(el) = eles_opt {
+                if let Some(el) = else_opt {
                     self.com_if_else.else_loc_vec.push(el.loc);
                     if let Exp_::IfElse(..) = el.value {
                         self.com_if_else.else_with_if_vec.push(true);
                     } else {
                         self.com_if_else.else_with_if_vec.push(false);
                     }
-                    self.collect_expr(el.as_ref());
+                    self.collect_expr(el);
+                }
+            }
+        }
+        if let Exp_::Match(_, arms) = &e.value {
+            if let BranchKind::MatchBlock = self.cur_kind {
+                self.match_block.match_block_loc_vec.push(e.loc);
+                for arm in &arms.value {
+                    self.match_block.arm_loc_vec.push(arm.loc);
+                    self.collect_expr(&arm.value.rhs);
                 }
             }
         }
@@ -264,6 +266,35 @@ impl BranchExtractor {
         false
     }
 
+    fn need_new_line_after_arm(
+        &self,
+        cur_line: String,
+        arm_start_pos: ByteIndex,
+        config: Config,
+    ) -> bool {
+        for arm_loc in &self.match_block.arm_loc_vec {
+            if arm_loc.start() == arm_start_pos {
+                let has_added = cur_line.len() as u32 + arm_loc.end() - arm_loc.start()
+                    > config.max_width() as u32;
+
+                let new_line_cnt = if self
+                    .added_new_line_branch
+                    .borrow()
+                    .contains_key(&arm_loc.end())
+                {
+                    self.added_new_line_branch.borrow_mut()[&arm_loc.end()]
+                } else {
+                    0
+                };
+                self.added_new_line_branch
+                    .borrow_mut()
+                    .insert(arm_loc.end(), new_line_cnt + has_added as usize);
+                return has_added;
+            }
+        }
+        false
+    }
+
     pub fn need_new_line_after_branch(
         &self,
         cur_line: String,
@@ -272,6 +303,7 @@ impl BranchExtractor {
     ) -> bool {
         self.need_new_line_in_then_without_brace(cur_line.clone(), branch_start_pos, config.clone())
             || self.need_new_line_after_else(cur_line.clone(), branch_start_pos, config.clone())
+            || self.need_new_line_after_arm(cur_line.clone(), branch_start_pos, config.clone())
     }
 
     fn added_new_line_in_then_without_brace(&self, then_end_pos: ByteIndex) -> usize {
@@ -302,9 +334,24 @@ impl BranchExtractor {
         0
     }
 
+    fn added_new_line_after_arm(&self, arm_end_pos: ByteIndex) -> usize {
+        for arm_loc in &self.match_block.arm_loc_vec {
+            if arm_loc.end() == arm_end_pos
+                && self
+                    .added_new_line_branch
+                    .borrow()
+                    .contains_key(&arm_loc.end())
+            {
+                return self.added_new_line_branch.borrow_mut()[&arm_loc.end()];
+            }
+        }
+        0
+    }
+
     pub fn added_new_line_after_branch(&self, branch_end_pos: ByteIndex) -> usize {
         self.added_new_line_in_then_without_brace(branch_end_pos)
             + self.added_new_line_after_else(branch_end_pos)
+            + self.added_new_line_after_arm(branch_end_pos)
     }
 
     pub fn is_nested_within_an_outer_else(&self, pos: ByteIndex) -> bool {
