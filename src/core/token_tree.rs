@@ -321,11 +321,12 @@ impl<'a> Parser<'a> {
         if self.fun_body.contains(&start) {
             note = Some(Note::FunBody);
         }
-        for (addr, modname) in self.address_module.clone() {
-            if addr < start && start < modname {
-                note = Some(Note::ModuleAddress);
-                break;
-            }
+        if self
+            .address_module
+            .iter()
+            .any(|(addr, modname)| *addr < start && start < *modname)
+        {
+            note = Some(Note::ModuleAddress);
         }
 
         while self.lexer.peek() != Tok::EOF {

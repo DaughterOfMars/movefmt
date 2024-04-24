@@ -2,6 +2,8 @@
 // Copyright (c) The BitsLab.MoveBit Contributors
 // SPDX-License-Identifier: Apache-2.0
 
+use std::borrow::Cow;
+
 use commentfmt::{comment::*, shape::*, Config};
 
 use crate::core::token_tree::{Comment, CommentKind};
@@ -44,11 +46,17 @@ impl Comment {
         result
     }
 
-    pub fn format_comment(&self, kind: CommentKind, block_indent: usize, alignment: usize, config: &Config) -> String {
+    pub fn format_comment(
+        &self,
+        kind: CommentKind,
+        block_indent: usize,
+        alignment: usize,
+        config: &Config,
+    ) -> Cow<str> {
         if CommentKind::DocComment == kind {
-            self.content.clone()
+            Cow::Borrowed(&self.content)
         } else {
-            self.format_doc_comment_with_multi_star(block_indent, alignment, config)
+            Cow::Owned(self.format_doc_comment_with_multi_star(block_indent, alignment, config))
         }
     }
 }

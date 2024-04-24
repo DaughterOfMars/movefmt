@@ -205,7 +205,7 @@ pub(crate) fn fun_header_specifier_fmt(specifier: &str, indent_str: &str) -> Str
 
         let mut parse_access_specifier_list =
             |last_substr_len: &mut usize, fun_specifiers_code: &mut Vec<(u32, u32, String)>| {
-                let mut chain: Vec<_> = vec![];
+                let mut chain = Vec::new();
                 if i + 1 == fun_specifiers.len() {
                     return chain;
                 }
