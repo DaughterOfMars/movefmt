@@ -4,9 +4,6 @@
 // Copyright (c) The BitsLab.MoveBit Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// #[macro_use]
-extern crate lazy_static;
-
 #[macro_export]
 macro_rules! impl_convert_loc {
     ($struct_name : ident) => {
