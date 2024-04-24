@@ -7,7 +7,9 @@ use crate::tools::utils::FileLineMappingOneFile;
 
 #[derive(Default, Debug)]
 pub struct MatchBlock {
+    pub match_loc_vec: Vec<Loc>,
     pub arm_loc_vec: Vec<Loc>,
+    pub arm_rhs_loc_vec: Vec<Loc>,
 }
 
 #[derive(Debug)]
@@ -33,8 +35,10 @@ impl MatchExtractor {
 
     fn collect_expr(&mut self, e: &Exp) {
         if let Exp_::Match(_, arms) = &e.value {
+            self.match_block.match_loc_vec.push(arms.loc);
             for arm in &arms.value {
                 self.match_block.arm_loc_vec.push(arm.loc);
+                self.match_block.arm_rhs_loc_vec.push(arm.value.rhs.loc);
                 self.collect_expr(&arm.value.rhs);
             }
         }

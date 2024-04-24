@@ -330,6 +330,20 @@ impl Format {
                     .com_if_else
                     .else_loc_vec
                     .iter()
+                    .any(|&x| x.start() == nest_data.start_pos)
+                || self
+                    .syntax_extractor
+                    .match_extractor
+                    .match_block
+                    .match_loc_vec
+                    .iter()
+                    .any(|&x| x.start() == nest_data.start_pos)
+                || self
+                    .syntax_extractor
+                    .match_extractor
+                    .match_block
+                    .arm_rhs_loc_vec
+                    .iter()
                     .any(|&x| x.start() == nest_data.start_pos))
         {
             return (true, None);
@@ -606,7 +620,7 @@ impl Format {
 
         // step7
         if b_new_line_mode || had_rm_added_new_line {
-            tracing::debug!("end_of_nested_block, b_new_line_mode = true");
+            tracing::debug!("end_of_nested_block, b_new_line_mode = {b_new_line_mode}");
             if nested_token_head != Token::If {
                 self.new_line(Some(data.end_pos), comments);
             }
@@ -615,7 +629,9 @@ impl Format {
         // step8 -- format end_token
         self.format_token_trees_internal(&data.end_token_tree(), None, false, comments);
         if let TokenTree::Simple(_) = data.end_token_tree() {
-            if expr_fmt::need_space(token, next_token) {
+            if nested_token_head == Token::EqualGreater && data.kind == NestKind::Brace {
+                self.new_line(None, comments);
+            } else if expr_fmt::need_space(token, next_token) {
                 self.ret.push(' ');
             }
         }
@@ -705,7 +721,7 @@ impl Format {
             }
         }
 
-        if *tok == Token::If || *tok == Token::Match {
+        if matches!(tok, Token::If | Token::Match) {
             self.format_context.set_env(FormatEnv::FormatExp);
         }
         self.format_context.current_token = *tok;
