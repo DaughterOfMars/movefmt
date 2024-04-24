@@ -2,9 +2,10 @@
 // Copyright (c) The BitsLab.MoveBit Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::core::token_tree::{analyze_token_tree_length, NestData, NestKind, Note, TokenTree};
 use commentfmt::Config;
 use move_compiler::parser::lexer::Tok;
+
+use crate::core::token_tree::{analyze_token_tree_length, NestData, NestKind, Note, TokenTree};
 
 pub enum TokType {
     /// abc like token,
@@ -27,7 +28,7 @@ pub enum TokType {
     AmpMut,
     ///
     Semicolon,
-    ///:
+    /// :
     Colon,
     /// @
     AtSign,
@@ -118,9 +119,7 @@ fn get_end_tok(t: &TokenTree) -> Tok {
 fn is_to_or_except(token: &Option<&TokenTree>) -> bool {
     match token {
         None => false,
-        Some(TokenTree::SimpleToken { content: con, .. }) => {
-            con.as_str() == "to" || con.as_str() == "except"
-        }
+        Some(TokenTree::SimpleToken { content: con, .. }) => con.as_str() == "to" || con.as_str() == "except",
         _ => false,
     }
 }
@@ -160,19 +159,13 @@ pub(crate) fn need_space(current: &TokenTree, next: Option<&TokenTree>) -> bool 
     }
     let next_token_tree = next.unwrap();
 
-    let is_bin_current = current
-        .get_note()
-        .map(|x| x == Note::BinaryOP)
-        .unwrap_or_default();
+    let is_bin_current = current.get_note().map(|x| x == Note::BinaryOP).unwrap_or_default();
     let is_bin_next = next_token_tree
         .get_note()
         .map(|x| x == Note::BinaryOP)
         .unwrap_or_default();
 
-    let is_apply_current = current
-        .get_note()
-        .map(|x| x == Note::ApplyName)
-        .unwrap_or_default();
+    let is_apply_current = current.get_note().map(|x| x == Note::ApplyName).unwrap_or_default();
     let is_apply_next = next_token_tree
         .get_note()
         .map(|x| x == Note::ApplyName)
@@ -229,9 +222,7 @@ pub(crate) fn need_space(current: &TokenTree, next: Option<&TokenTree>) -> bool 
             }
 
             if Tok::Comma == curr_start_tok
-                && (Tok::AtSign == next_start_tok
-                    || Tok::Amp == next_start_tok
-                    || Tok::AmpMut == next_start_tok)
+                && (Tok::AtSign == next_start_tok || Tok::Amp == next_start_tok || Tok::AmpMut == next_start_tok)
             {
                 result = true;
                 tracing::debug!(
@@ -316,9 +307,7 @@ pub(crate) fn need_space(current: &TokenTree, next: Option<&TokenTree>) -> bool 
             if is_next_tok_nested && Tok::LBrace == next_start_tok {
                 result = true;
             }
-            if !is_next_tok_nested
-                && (Tok::Slash == next_start_tok || Tok::LBrace == next_start_tok)
-            {
+            if !is_next_tok_nested && (Tok::Slash == next_start_tok || Tok::LBrace == next_start_tok) {
                 result = true;
             }
 
@@ -327,13 +316,13 @@ pub(crate) fn need_space(current: &TokenTree, next: Option<&TokenTree>) -> bool 
                 || Tok::If == curr_start_tok
                 || Tok::Else == curr_start_tok
                 || Tok::While == curr_start_tok
+                || Tok::Match == curr_start_tok
             {
                 result = true;
             }
 
             if next_start_tok == Tok::Exclaim {
-                result = matches!(TokType::from(curr_start_tok), TokType::Alphabet)
-                    || Tok::RParen == curr_end_tok;
+                result = matches!(TokType::from(curr_start_tok), TokType::Alphabet) || Tok::RParen == curr_end_tok;
             }
 
             if let Some(content) = current.simple_str() {
@@ -356,11 +345,7 @@ pub(crate) fn need_space(current: &TokenTree, next: Option<&TokenTree>) -> bool 
     }
 }
 
-pub(crate) fn judge_simple_paren_expr(
-    kind: &NestData,
-    elements: &Vec<TokenTree>,
-    config: Config,
-) -> bool {
+pub(crate) fn judge_simple_paren_expr(kind: &NestData, elements: &Vec<TokenTree>, config: &Config) -> bool {
     if elements.is_empty() {
         return true;
     };

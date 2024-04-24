@@ -2,15 +2,17 @@
 // Copyright (c) The BitsLab.MoveBit Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::tools::syntax::parse_file_string;
-use crate::tools::utils::FileLineMappingOneFile;
-use move_command_line_common::files::FileHash;
-use move_compiler::parser::ast::Definition;
-use move_compiler::parser::ast::*;
-use move_compiler::shared::CompilationEnv;
-use move_compiler::Flags;
-use move_ir_types::location::*;
 use std::collections::BTreeMap;
+
+use move_command_line_common::files::FileHash;
+use move_compiler::{
+    parser::ast::{Definition, *},
+    shared::CompilationEnv,
+    Flags,
+};
+use move_ir_types::location::*;
+
+use crate::tools::{syntax::parse_file_string, utils::FileLineMappingOneFile};
 
 #[derive(Debug, Default)]
 pub struct BigBlockExtractor {
@@ -19,16 +21,16 @@ pub struct BigBlockExtractor {
 }
 
 impl BigBlockExtractor {
-    pub fn new(fmt_buffer: String) -> Self {
+    pub fn new(fmt_buffer: &str) -> Self {
         let mut big_block_extractor = Self {
             blk_loc_vec: vec![],
             line_mapping: FileLineMappingOneFile::default(),
         };
 
-        big_block_extractor.line_mapping.update(&fmt_buffer);
+        big_block_extractor.line_mapping.update(fmt_buffer);
         let attrs = BTreeMap::new();
         let mut env = CompilationEnv::new(Flags::testing(), Vec::new(), attrs, None);
-        let (defs, _) = parse_file_string(&mut env, FileHash::empty(), &fmt_buffer).unwrap();
+        let (defs, _) = parse_file_string(&mut env, FileHash::empty(), fmt_buffer).unwrap();
 
         for d in defs.iter() {
             big_block_extractor.collect_definition(d);
@@ -80,10 +82,9 @@ fn get_nth_line(s: &str, n: usize) -> Option<&str> {
     s.lines().nth(n)
 }
 
-pub fn add_blank_row_in_two_blocks(fmt_buffer: String) -> String {
-    let buf = fmt_buffer.clone();
-    let mut result = fmt_buffer.clone();
-    let big_block_extractor = BigBlockExtractor::new(fmt_buffer.clone());
+pub fn add_blank_row_in_two_blocks(fmt_buffer: &str) -> String {
+    let mut result = fmt_buffer.to_owned();
+    let big_block_extractor = BigBlockExtractor::new(fmt_buffer);
     // tracing::debug!("blocks = {:?}", big_block_extractor.blk_loc_vec);
     let mut insert_char_nums = 0;
     for pre_blk_idx in 0..big_block_extractor.blk_loc_vec.len() {
@@ -115,8 +116,7 @@ pub fn add_blank_row_in_two_blocks(fmt_buffer: String) -> String {
             if blk1_end_line + 1 == blk2_start_line {
                 true
             } else {
-                let the_row_after_blk1_end =
-                    get_nth_line(buf.as_str(), (blk1_end_line + 1) as usize).unwrap_or_default();
+                let the_row_after_blk1_end = get_nth_line(fmt_buffer, (blk1_end_line + 1) as usize).unwrap_or_default();
                 let trimed_prefix = the_row_after_blk1_end.trim_start().split(' ');
                 if trimed_prefix.count() > 1 || the_row_after_blk1_end.trim_start().len() >= 2 {
                     // there are code or comment located in line(blk1_end_line + 1)
@@ -129,8 +129,7 @@ pub fn add_blank_row_in_two_blocks(fmt_buffer: String) -> String {
             }
         };
         if is_need_blank_row {
-            let mut insert_pos =
-                big_block_extractor.blk_loc_vec[pre_blk_idx].end() as usize + insert_char_nums;
+            let mut insert_pos = big_block_extractor.blk_loc_vec[pre_blk_idx].end() as usize + insert_char_nums;
             while result.chars().nth(insert_pos).unwrap_or_default() != '\n' {
                 insert_pos += 1;
             }
@@ -141,7 +140,7 @@ pub fn add_blank_row_in_two_blocks(fmt_buffer: String) -> String {
     result
 }
 
-pub fn fmt_big_block(fmt_buffer: String) -> String {
+pub fn fmt_big_block(fmt_buffer: &str) -> String {
     add_blank_row_in_two_blocks(fmt_buffer)
 }
 
@@ -158,8 +157,7 @@ fn test_add_blank_row_in_two_blocks_1() {
             invariant is_valid_char(byte); //comment
         }
     }    
-    "
-        .to_string(),
+    ",
     );
 
     tracing::debug!("result = {}", result);
@@ -204,8 +202,7 @@ module Test {
         some_other_field2.some_other_field1
     }
 }
-"
-        .to_string(),
+",
     );
 
     tracing::debug!("result = {}", result);
@@ -239,8 +236,7 @@ module test_module4 {
         field: vector<T>, // This is a comment after complex field
     }
 }
-"
-        .to_string(),
+",
     );
 
     tracing::debug!("result = {}", result);
@@ -263,8 +259,7 @@ spec std::string {
     }
 }
     
-"
-        .to_string(),
+",
     );
 
     tracing::debug!("result = {}", result);
@@ -284,8 +279,7 @@ address 0x1 {
         fun test_destroy_fails() {}
     }
 }
-    "
-        .to_string(),
+    ",
     );
 
     tracing::debug!("result = {}", result);

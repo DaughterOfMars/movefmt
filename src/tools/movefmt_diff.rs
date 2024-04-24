@@ -1,10 +1,9 @@
-use std::collections::HashMap;
-use std::collections::VecDeque;
-use std::fmt;
-use std::fs;
-use std::io;
-use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::{
+    collections::{HashMap, VecDeque},
+    fmt, fs, io,
+    io::{Read, Write},
+    path::{Path, PathBuf},
+};
 
 pub const DIFF_CONTEXT_SIZE: usize = 3;
 
@@ -58,9 +57,7 @@ impl From<Vec<Mismatch>> for ModifiedLines {
     fn from(mismatches: Vec<Mismatch>) -> ModifiedLines {
         let chunks = mismatches.into_iter().map(|mismatch| {
             let lines = mismatch.lines.iter();
-            let num_removed = lines
-                .filter(|line| matches!(line, DiffLine::Resulting(_)))
-                .count();
+            let num_removed = lines.filter(|line| matches!(line, DiffLine::Resulting(_))).count();
 
             let new_lines = mismatch.lines.into_iter().filter_map(|line| match line {
                 DiffLine::Context(_) | DiffLine::Resulting(_) => None,
@@ -120,11 +117,10 @@ impl std::str::FromStr for ModifiedLines {
                 (Some(orig), Some(removed), Some(added)) => (orig, removed, added),
                 _ => return Err(()),
             };
-            let (orig, rem, new_lines): (u32, u32, usize) =
-                match (orig.parse(), rem.parse(), new_lines.parse()) {
-                    (Ok(a), Ok(b), Ok(c)) => (a, b, c),
-                    _ => return Err(()),
-                };
+            let (orig, rem, new_lines): (u32, u32, usize) = match (orig.parse(), rem.parse(), new_lines.parse()) {
+                (Ok(a), Ok(b), Ok(c)) => (a, b, c),
+                _ => return Err(()),
+            };
             let lines = lines.by_ref().take(new_lines);
             let lines: Vec<_> = lines.map(ToOwned::to_owned).collect();
             if lines.len() != new_lines {
@@ -262,13 +258,10 @@ where
 
         for line in mismatch.lines {
             match line {
-                DiffLine::Context(ref str) => {
-                    writer.writeln(&format!(" {str}{line_terminator}"), None)
+                DiffLine::Context(ref str) => writer.writeln(&format!(" {str}{line_terminator}"), None),
+                DiffLine::Expected(ref str) => {
+                    writer.writeln(&format!("+{str}{line_terminator}"), Some(term::color::GREEN))
                 }
-                DiffLine::Expected(ref str) => writer.writeln(
-                    &format!("+{str}{line_terminator}"),
-                    Some(term::color::GREEN),
-                ),
                 DiffLine::Resulting(ref str) => {
                     writer.writeln(&format!("-{str}{line_terminator}"), Some(term::color::RED))
                 }
@@ -279,8 +272,7 @@ where
 
 pub fn print_mismatches_default_message(result: HashMap<PathBuf, Vec<Mismatch>>) {
     for (file_name, diff) in result {
-        let mismatch_msg_formatter =
-            |line_num| format!("\nMismatch at {}:{}:", file_name.display(), line_num);
+        let mismatch_msg_formatter = |line_num| format!("\nMismatch at {}:{}:", file_name.display(), line_num);
         print_diff(diff, mismatch_msg_formatter);
     }
 

@@ -1,9 +1,14 @@
-use std::cell::Cell;
-use std::default::Default;
-use std::fs::File;
-use std::io::{Error, ErrorKind, Read};
-use std::path::{Path, PathBuf};
-use std::{env, fs};
+// Copyright 2024 IOTA Stiftung
+// SPDX-License-Identifier: Apache-2.0
+
+use std::{
+    cell::Cell,
+    default::Default,
+    env, fs,
+    fs::File,
+    io::{Error, ErrorKind, Read},
+    path::{Path, PathBuf},
+};
 
 use thiserror::Error;
 
@@ -38,8 +43,7 @@ pub struct ToTomlError(toml::ser::Error);
 impl PartialConfig {
     pub fn to_toml(&self) -> Result<String, ToTomlError> {
         // Non-user-facing options can't be specified in TOML
-        let cloned = self.clone();
-        ::toml::to_string(&cloned).map_err(ToTomlError)
+        ::toml::to_string(self).map_err(ToTomlError)
     }
 }
 
@@ -55,8 +59,7 @@ impl Config {
         let mut file = File::open(&file_path)?;
         let mut toml = String::new();
         file.read_to_string(&mut toml)?;
-        Config::from_toml(&toml)
-            .map_err(|err| Error::new(ErrorKind::InvalidData, err))
+        Config::from_toml(&toml).map_err(|err| Error::new(ErrorKind::InvalidData, err))
     }
 
     /// Resolves the config for input in `dir`.
@@ -119,9 +122,7 @@ impl Config {
     }
 
     pub fn from_toml(toml: &str) -> Result<Config, String> {
-        let parsed: ::toml::Value = toml
-            .parse()
-            .map_err(|e| format!("Could not parse TOML: {}", e))?;
+        let parsed: ::toml::Value = toml.parse().map_err(|e| format!("Could not parse TOML: {}", e))?;
         let mut err = String::new();
         let table = parsed
             .as_table()
@@ -153,10 +154,10 @@ impl Config {
 /// file system (including searching the file system for overrides).
 pub fn load_config<O: CliOptions>(
     file_path: Option<&Path>,
-    options: Option<O>,
+    options: Option<&O>,
 ) -> Result<(Config, Option<PathBuf>), Error> {
     let over_ride = match options {
-        Some(ref opts) => config_path(opts)?,
+        Some(opts) => config_path(opts)?,
         None => None,
     };
 
@@ -202,14 +203,11 @@ fn get_toml_path(dir: &Path) -> Result<Option<PathBuf>, Error> {
     Ok(None)
 }
 
-fn config_path(options: &dyn CliOptions) -> Result<Option<PathBuf>, Error> {
+fn config_path(options: &impl CliOptions) -> Result<Option<PathBuf>, Error> {
     let config_path_not_found = |path: &str| -> Result<Option<PathBuf>, Error> {
         Err(Error::new(
             ErrorKind::NotFound,
-            format!(
-                "Error: unable to find a config file for the given path: `{}`",
-                path
-            ),
+            format!("Error: unable to find a config file for the given path: `{}`", path),
         ))
     };
 

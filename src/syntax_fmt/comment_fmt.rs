@@ -2,8 +2,9 @@
 // Copyright (c) The BitsLab.MoveBit Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::core::token_tree::{Comment, CommentKind};
 use commentfmt::{comment::*, shape::*, Config};
+
+use crate::core::token_tree::{Comment, CommentKind};
 
 impl Comment {
     /// format comment
@@ -25,12 +26,7 @@ impl Comment {
         }
     }
 
-    fn format_doc_comment_with_multi_star(
-        &self,
-        block_indent: usize,
-        alignment: usize,
-        config: &Config,
-    ) -> String {
+    fn format_doc_comment_with_multi_star(&self, block_indent: usize, alignment: usize, config: &Config) -> String {
         let mut result = self.content.to_string();
         let block_style = false;
         let indent = Indent::new(block_indent, alignment);
@@ -48,13 +44,7 @@ impl Comment {
         result
     }
 
-    pub fn format_comment(
-        &self,
-        kind: CommentKind,
-        block_indent: usize,
-        alignment: usize,
-        config: &Config,
-    ) -> String {
+    pub fn format_comment(&self, kind: CommentKind, block_indent: usize, alignment: usize, config: &Config) -> String {
         if CommentKind::DocComment == kind {
             self.content.clone()
         } else {

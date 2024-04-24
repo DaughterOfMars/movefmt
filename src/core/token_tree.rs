@@ -6,13 +6,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use core::panic;
-use std::cmp::Ordering;
-use std::collections::HashSet;
+use std::{cmp::Ordering, collections::HashSet};
 
-use move_compiler::parser::ast::Definition;
-use move_compiler::parser::ast::*;
-use move_compiler::parser::lexer::{Lexer, Tok};
-use move_compiler::shared::Identifier;
+use move_compiler::{
+    parser::{
+        ast::{Definition, *},
+        lexer::{Lexer, Tok},
+    },
+    shared::Identifier,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize)]
 pub enum NestKind {
@@ -121,7 +123,7 @@ pub enum TokenTree {
     },
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub enum Note {
     /// binary op like `+` , `*`
     BinaryOP,
@@ -136,13 +138,8 @@ pub enum Note {
     /// This is a address that contains modules.
     ModuleAddress,
     /// default
+    #[default]
     Unknown,
-}
-
-impl Default for Note {
-    fn default() -> Self {
-        Note::Unknown
-    }
 }
 
 impl Default for TokenTree {
@@ -299,10 +296,7 @@ impl<'a> Parser<'a> {
                     }
                 }
 
-                if let Some((start, end)) = self.type_lambda_pair[self.type_lambda_pair_index..]
-                    .iter()
-                    .next()
-                {
+                if let Some((start, end)) = self.type_lambda_pair[self.type_lambda_pair_index..].iter().next() {
                     if &pos >= start && &pos <= end {
                         return Some(nest_kind);
                     } else {
@@ -321,12 +315,7 @@ impl<'a> Parser<'a> {
         self.lexer.advance().unwrap();
         let mut ret = vec![];
         let mut note = None;
-        if self
-            .struct_definitions
-            .iter()
-            .any(|x| x.0 <= start && x.1 >= start)
-            && kind == NestKind::Brace
-        {
+        if self.struct_definitions.iter().any(|x| x.0 <= start && x.1 >= start) && kind == NestKind::Brace {
             note = Some(Note::StructDefinition);
         }
         if self.fun_body.contains(&start) {
@@ -391,9 +380,7 @@ impl<'a> Parser<'a> {
         for d in self.defs.iter() {
             collect_definition(self, d);
         }
-        self.type_lambda_pair
-            .iter()
-            .for_each(|x| debug_assert!(x.0 <= x.1));
+        self.type_lambda_pair.iter().for_each(|x| debug_assert!(x.0 <= x.1));
 
         self.type_lambda_pair.sort_by(|x, y| {
             debug_assert!(x.0.cmp(&y.0) != Ordering::Equal, "{:?}?{:?}", x, y);
@@ -485,7 +472,7 @@ impl<'a> Parser<'a> {
                     es.value.iter().for_each(|e| collect_expr(p, e));
                 }
                 Exp_::Pack(name, es) => {
-                    if let Some(e) = es.get(0) {
+                    if let Some(e) = es.first() {
                         p.type_lambda_pair.push((name.loc.end(), e.0.loc().start()));
                     }
                     es.iter().for_each(|e| collect_expr(p, &e.1));
@@ -881,12 +868,13 @@ impl CommentExtractor {
 
 #[cfg(test)]
 mod comment_test {
-    use crate::tools::syntax::parse_file_string;
-    use move_command_line_common::files::FileHash;
-    use move_compiler::{editions::Edition, shared::CompilationEnv, Flags};
     use std::collections::BTreeMap;
 
+    use move_command_line_common::files::FileHash;
+    use move_compiler::{editions::Edition, shared::CompilationEnv, Flags};
+
     use super::*;
+    use crate::tools::syntax::parse_file_string;
     #[test]
     fn token_tree_to_json() {
         let content = r#"module 0x1::xxx{
@@ -922,13 +910,7 @@ mod comment_test {
         "#,
         )
         .unwrap();
-        let v = vec![
-            "// 111",
-            "// 222",
-            "// bb",
-            "/* ***** '\" 1121 **/",
-            "/// ggg",
-        ];
+        let v = ["// 111", "// 222", "// bb", "/* ***** '\" 1121 **/", "/// ggg"];
         for (c1, c2) in v.iter().zip(x.comments.iter()) {
             assert_eq!(*c1, c2.content.as_str());
         }
@@ -941,7 +923,7 @@ mod comment_test {
 
     #[test]
     fn test_comment_extractor_err() {
-        let v = vec![
+        let v = [
             (
                 r#" \" "#,
                 CommentExtractorErr::NotTerminalState(ExtractorCommentState::Quote),
@@ -958,7 +940,7 @@ mod comment_test {
         ];
 
         for (c, err) in v.iter() {
-            match CommentExtractor::new(*c) {
+            match CommentExtractor::new(c) {
                 Ok(_) => unreachable!(),
                 Err(x) => assert_eq!(x, *err),
             }

@@ -1,5 +1,7 @@
-use std::borrow::Cow;
-use std::ops::{Add, Sub};
+use std::{
+    borrow::Cow,
+    ops::{Add, Sub},
+};
 
 use crate::Config;
 
@@ -14,8 +16,7 @@ pub struct Indent {
 
 // INDENT_BUFFER.len() = 81
 const INDENT_BUFFER_LEN: usize = 80;
-const INDENT_BUFFER: &str =
-    "\n                                                                                ";
+const INDENT_BUFFER: &str = "\n                                                                                ";
 
 impl Indent {
     pub fn new(block_indent: usize, alignment: usize) -> Indent {
@@ -112,10 +113,7 @@ impl Sub for Indent {
     type Output = Indent;
 
     fn sub(self, rhs: Indent) -> Indent {
-        Indent::new(
-            self.block_indent - rhs.block_indent,
-            self.alignment - rhs.alignment,
-        )
+        Indent::new(self.block_indent - rhs.block_indent, self.alignment - rhs.alignment)
     }
 }
 

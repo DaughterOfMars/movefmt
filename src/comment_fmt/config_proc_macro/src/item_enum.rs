@@ -2,8 +2,7 @@ use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
 
-use crate::attrs::*;
-use crate::utils::*;
+use crate::{attrs::*, utils::*};
 
 type Variants = syn::punctuated::Punctuated<syn::Variant, syn::Token![,]>;
 
@@ -66,11 +65,7 @@ fn fields_in_variant(variant: &syn::Variant) -> TokenStream {
 }
 
 fn impl_doc_hint(ident: &syn::Ident, variants: &Variants) -> TokenStream {
-    let doc_hint = variants
-        .iter()
-        .map(doc_hint_of_variant)
-        .collect::<Vec<_>>()
-        .join("|");
+    let doc_hint = variants.iter().map(doc_hint_of_variant).collect::<Vec<_>>().join("|");
     let doc_hint = format!("[{}]", doc_hint);
 
     let variant_stables = variants

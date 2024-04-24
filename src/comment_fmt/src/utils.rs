@@ -1,7 +1,10 @@
 use unicode_width::UnicodeWidthStr;
-use crate::comment::{filter_normal_code, FullCodeCharKind, LineClasses};
-use crate::config::Config;
-use crate::shape::{Indent, Shape};
+
+use crate::{
+    comment::{filter_normal_code, FullCodeCharKind, LineClasses},
+    config::Config,
+    shape::{Indent, Shape},
+};
 
 #[inline]
 pub fn is_single_line(s: &str) -> bool {
@@ -57,11 +60,7 @@ pub fn filtered_str_fits(snippet: &str, max_width: usize, shape: Shape) -> bool 
             return true;
         }
         // The other lines must fit within the maximum width.
-        if snippet
-            .lines()
-            .skip(1)
-            .any(|line| unicode_str_width(line) > max_width)
-        {
+        if snippet.lines().skip(1).any(|line| unicode_str_width(line) > max_width) {
             return false;
         }
         // A special check for the last line, since the caller may
@@ -74,11 +73,7 @@ pub fn filtered_str_fits(snippet: &str, max_width: usize, shape: Shape) -> bool 
 }
 
 /// Indent each line according to the specified `indent`.
-pub fn trim_left_preserve_layout(
-    orig: &str,
-    indent: Indent,
-    config: &Config,
-) -> Option<String> {
+pub fn trim_left_preserve_layout(orig: &str, indent: Indent, config: &Config) -> Option<String> {
     let mut lines = LineClasses::new(orig);
     let first_line = lines.next().map(|(_, s)| s.trim_end().to_owned())?;
     let mut trimmed_lines = Vec::with_capacity(16);
@@ -121,18 +116,16 @@ pub fn trim_left_preserve_layout(
             + "\n"
             + &trimmed_lines
                 .iter()
-                .map(
-                    |&(trimmed, ref line, prefix_space_width)| match prefix_space_width {
-                        _ if !trimmed => line.to_owned(),
-                        Some(original_indent_width) => {
-                            let new_indent_width = indent.width()
-                                + original_indent_width.saturating_sub(min_prefix_space_width);
-                            let new_indent = Indent::from_width(config, new_indent_width);
-                            format!("{}{}", new_indent.to_string(config), line)
-                        }
-                        None => String::new(),
-                    },
-                )
+                .map(|&(trimmed, ref line, prefix_space_width)| match prefix_space_width {
+                    _ if !trimmed => line.to_owned(),
+                    Some(original_indent_width) => {
+                        let new_indent_width =
+                            indent.width() + original_indent_width.saturating_sub(min_prefix_space_width);
+                        let new_indent = Indent::from_width(config, new_indent_width);
+                        format!("{}{}", new_indent.to_string(config), line)
+                    }
+                    None => String::new(),
+                })
                 .collect::<Vec<_>>()
                 .join("\n"),
     )

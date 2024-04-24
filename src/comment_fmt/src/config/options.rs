@@ -1,13 +1,20 @@
-use std::collections::{hash_set, HashSet};
-use std::fmt;
-use std::path::{Path, PathBuf};
-use std::str::FromStr;
+// Copyright 2024 IOTA Stiftung
+// SPDX-License-Identifier: Apache-2.0
 
-use itertools::Itertools;
+use std::{
+    collections::{hash_set, HashSet},
+    fmt,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
+
 use config_proc_macro::config_type;
-use serde::de::{SeqAccess, Visitor};
-use serde::ser::SerializeSeq;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use itertools::Itertools;
+use serde::{
+    de::{SeqAccess, Visitor},
+    ser::SerializeSeq,
+    Deserialize, Deserializer, Serialize, Serializer,
+};
 
 // use crate::config::lists::*;
 use crate::config::Config;
@@ -176,10 +183,7 @@ impl fmt::Display for IgnoreList {
             "[{}]",
             self.path_set
                 .iter()
-                .format_with(", ", |path, f| f(&format_args!(
-                    "{}",
-                    path.to_string_lossy()
-                )))
+                .format_with(", ", |path, f| f(&format_args!("{}", path.to_string_lossy())))
         )
     }
 }
@@ -258,7 +262,7 @@ impl FromStr for IgnoreList {
 /// Maps client-supplied options to movefmt's internals, mostly overriding
 /// values in a config with values from the command line.
 pub trait CliOptions {
-    fn apply_to(self, config: &mut Config);
+    fn apply_to(&self, config: &mut Config);
     fn config_path(&self) -> Option<&Path>;
 }
 

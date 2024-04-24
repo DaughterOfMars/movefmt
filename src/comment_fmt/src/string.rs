@@ -4,9 +4,11 @@ use regex::Regex;
 use unicode_properties::{GeneralCategory, UnicodeGeneralCategory};
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::config::Config;
-use crate::shape::Shape;
-use crate::utils::{unicode_str_width, wrap_str};
+use crate::{
+    config::Config,
+    shape::Shape,
+    utils::{unicode_str_width, wrap_str},
+};
 
 const MIN_STRING: usize = 10;
 
@@ -61,11 +63,7 @@ impl<'a> StringFormat<'a> {
     }
 }
 
-pub fn rewrite_string<'a>(
-    orig: &str,
-    fmt: &StringFormat<'a>,
-    newline_max_chars: usize,
-) -> Option<String> {
+pub fn rewrite_string<'a>(orig: &str, fmt: &StringFormat<'a>, newline_max_chars: usize) -> Option<String> {
     let max_width_with_indent = fmt.max_width_with_indent()?;
     let max_width_without_indent = fmt.max_width_without_indent()?;
     let indent_with_newline = fmt.shape.indent.to_string_with_newline(fmt.config);
@@ -113,12 +111,7 @@ pub fn rewrite_string<'a>(
         }
 
         // The input starting at cur_start needs to be broken
-        match break_string(
-            cur_max_width,
-            fmt.trim_end,
-            fmt.line_end,
-            &graphemes[cur_start..],
-        ) {
+        match break_string(cur_max_width, fmt.trim_end, fmt.line_end, &graphemes[cur_start..]) {
             SnippetState::LineEnd(line, len) => {
                 result.push_str(&line);
                 result.push_str(fmt.line_end);
@@ -165,10 +158,7 @@ fn detect_url(s: &[&str], index: usize) -> Option<usize> {
         return None;
     }
     let split = s[start..].concat();
-    if split.contains("https://")
-        || split.contains("http://")
-        || split.contains("ftp://")
-        || split.contains("file://")
+    if split.contains("https://") || split.contains("http://") || split.contains("ftp://") || split.contains("file://")
     {
         match s[index..].iter().position(|g| is_whitespace(g)) {
             Some(pos) => Some(index + pos - 1),
@@ -183,9 +173,7 @@ fn detect_url(s: &[&str], index: usize) -> Option<usize> {
 fn trim_end_but_line_feed(trim_end: bool, result: String) -> String {
     let whitespace_except_line_feed = |c: char| c.is_whitespace() && c != '\n';
     if trim_end && result.ends_with(whitespace_except_line_feed) {
-        result
-            .trim_end_matches(whitespace_except_line_feed)
-            .to_string()
+        result.trim_end_matches(whitespace_except_line_feed).to_string()
     } else {
         result
     }
@@ -248,10 +236,7 @@ fn break_string(max_width: usize, trim_end: bool, line_end: &str, input: &[&str]
         let mut index_plus_ws = index;
         for (i, grapheme) in input[index + 1..].iter().enumerate() {
             if !trim_end && is_new_line(grapheme) {
-                return SnippetState::EndWithLineFeed(
-                    input[0..=index + 1 + i].concat(),
-                    index + 2 + i,
-                );
+                return SnippetState::EndWithLineFeed(input[0..=index + 1 + i].concat(), index + 2 + i);
             } else if not_whitespace_except_line_feed(grapheme) {
                 index_plus_ws = index + i;
                 break;
@@ -350,8 +335,7 @@ fn is_valid_linebreak(input: &[&str], pos: usize) -> bool {
 }
 
 fn is_part_of_type(input: &[&str], pos: usize) -> bool {
-    input.get(pos..=pos + 1) == Some(&[":", ":"])
-        || input.get(pos.saturating_sub(1)..=pos) == Some(&[":", ":"])
+    input.get(pos..=pos + 1) == Some(&[":", ":"]) || input.get(pos.saturating_sub(1)..=pos) == Some(&[":", ":"])
 }
 
 fn is_new_line(grapheme: &str) -> bool {

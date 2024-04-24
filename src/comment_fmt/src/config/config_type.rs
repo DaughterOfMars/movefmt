@@ -254,11 +254,7 @@ macro_rules! create_config {
     )
 }
 
-pub fn is_stable_option_and_value<T>(
-    option_name: &str,
-    option_stable: bool,
-    option_value: &T,
-) -> bool
+pub fn is_stable_option_and_value<T>(option_name: &str, option_stable: bool, option_value: &T) -> bool
 where
     T: PartialEq + std::fmt::Debug + ConfigType,
 {

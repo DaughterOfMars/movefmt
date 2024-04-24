@@ -1,18 +1,15 @@
 // Copyright 2024 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
+use std::{collections::BTreeMap, path::Path};
+
 use move_command_line_common::files::FileHash;
+use move_compiler::{editions::Edition, parser::lexer::Lexer, shared::CompilationEnv, Flags};
 use movefmt::{
     core::token_tree::{CommentExtractor, CommentExtractorErr, TokenTree},
-    tools::movefmt_diff,
-    tools::syntax::parse_file_string,
-    tools::utils::*,
+    tools::{movefmt_diff, syntax::parse_file_string, utils::*},
 };
-use std::collections::BTreeMap;
 use tracing_subscriber::EnvFilter;
-
-use move_compiler::{editions::Edition, parser::lexer::Lexer, shared::CompilationEnv, Flags};
-use std::path::Path;
 
 fn scan_dir(dir: &str) -> usize {
     let mut num: usize = 0;
@@ -81,19 +78,16 @@ fn test_on_file(p: impl AsRef<Path>) -> bool {
 
 fn test_content(content_origin: &str, p: impl AsRef<Path>) {
     let p = p.as_ref();
-    let tokens_origin =
-        extract_tokens(content_origin).expect("test file should be about to lexer,err:{:?}");
+    let tokens_origin = extract_tokens(content_origin).expect("test file should be about to lexer,err:{:?}");
 
-    let content_format =
-        movefmt::core::fmt::format_entry(content_origin, commentfmt::Config::default()).unwrap();
+    let content_format = movefmt::core::fmt::format_entry(content_origin, &Default::default()).unwrap();
 
     let tokens_format = match extract_tokens(content_format.as_str()) {
         Ok(x) => x,
         Err(err) => {
             unreachable!(
                 "should be able to parse after format:err{:?},after format:\n\n################\n{}\n###############",
-                err,
-                content_format
+                err, content_format
             );
         }
     };
@@ -118,11 +112,7 @@ fn test_content(content_origin: &str, p: impl AsRef<Path>) {
     );
     let comments_origin = extract_comments(&content_origin).unwrap();
     let comments_format = extract_comments(&content_format).unwrap();
-    for (index, (c1, c2)) in comments_origin
-        .iter()
-        .zip(comments_format.iter())
-        .enumerate()
-    {
+    for (index, (c1, c2)) in comments_origin.iter().zip(comments_format.iter()).enumerate() {
         assert_eq!(c1, c2, "comment {} not ok.", index);
     }
     assert_eq!(
@@ -194,9 +184,7 @@ fn extract_tokens(content: &str) -> Result<Vec<ExtractToken>, Vec<String>> {
                 tok: _tok,
                 note: _,
             } => {
-                let loc = m
-                    .translate(&Path::new(".").to_path_buf(), *pos, *pos)
-                    .unwrap();
+                let loc = m.translate(&Path::new(".").to_path_buf(), *pos, *pos).unwrap();
 
                 ret.push(ExtractToken {
                     content: content.clone(),
@@ -210,11 +198,7 @@ fn extract_tokens(content: &str) -> Result<Vec<ExtractToken>, Vec<String>> {
                 note: _,
             } => {
                 let start_loc = m
-                    .translate(
-                        &Path::new(".").to_path_buf(),
-                        kind.start_pos,
-                        kind.start_pos,
-                    )
+                    .translate(&Path::new(".").to_path_buf(), kind.start_pos, kind.start_pos)
                     .unwrap();
                 ret.push(ExtractToken {
                     content: format!("{}", kind.kind.start_tok()),
@@ -250,10 +234,7 @@ fn test_dir() {
         .with_env_filter(EnvFilter::from_env("MOVEFMT_LOG"))
         .init();
     eprintln!("formated {} files", scan_dir("./tests/complex"));
-    eprintln!(
-        "formated {} files",
-        scan_dir("./tests/aptos_framework_case")
-    );
+    eprintln!("formated {} files", scan_dir("./tests/aptos_framework_case"));
     eprintln!("formated {} files", scan_dir("./tests/issues"));
 }
 

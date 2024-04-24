@@ -12,20 +12,15 @@ macro_rules! impl_convert_loc {
     ($struct_name : ident) => {
         impl ConvertLoc for $struct_name {
             fn convert_file_hash_filepath(&self, hash: &FileHash) -> Option<PathBuf> {
-                self.hash_file
-                    .as_ref()
-                    .borrow()
-                    .get_path(hash)
-                    .map(|x| x.clone())
+                self.hash_file.as_ref().borrow().get_path(hash).map(|x| x.clone())
             }
             fn convert_loc_range(&self, loc: &Loc) -> Option<FileRange> {
                 self.convert_file_hash_filepath(&loc.file_hash())
                     .map(|file| {
-                        self.file_line_mapping.as_ref().borrow().translate(
-                            &file,
-                            loc.start(),
-                            loc.end(),
-                        )
+                        self.file_line_mapping
+                            .as_ref()
+                            .borrow()
+                            .translate(&file, loc.start(), loc.end())
                     })
                     .flatten()
             }

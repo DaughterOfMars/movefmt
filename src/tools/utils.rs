@@ -2,13 +2,16 @@
 // Copyright (c) The BitsLab.MoveBit Contributors
 // SPDX-License-Identifier: Apache-2.0
 
+use std::{
+    collections::HashMap,
+    path::*,
+    time::{Duration, Instant},
+    vec,
+};
+
 use lsp_types::{Location, Position};
 use move_command_line_common::files::FileHash;
 use move_ir_types::location::*;
-
-use std::collections::HashMap;
-use std::time::{Duration, Instant};
-use std::{path::*, vec};
 
 /// Double way mapping between FileHash and FilePath.
 #[derive(Debug, Default)]
@@ -44,11 +47,7 @@ impl FileLineMappingOneFile {
     pub fn update(&mut self, content: &str) {
         self.mapping.update(Path::new(".").to_path_buf(), content);
     }
-    pub(crate) fn translate(
-        &self,
-        start_index: ByteIndex,
-        end_index: ByteIndex,
-    ) -> Option<lsp_types::Range> {
+    pub(crate) fn translate(&self, start_index: ByteIndex, end_index: ByteIndex) -> Option<lsp_types::Range> {
         self.mapping
             .translate(&Path::new(".").to_path_buf(), start_index, end_index)
             .map(|x| x.mk_range())
@@ -78,12 +77,7 @@ impl FileLineMapping {
         self.m.insert(filepath, v);
     }
 
-    pub fn translate(
-        &self,
-        filepath: &PathBuf,
-        start_index: ByteIndex,
-        mut end_index: ByteIndex,
-    ) -> Option<FileRange> {
+    pub fn translate(&self, filepath: &PathBuf, start_index: ByteIndex, mut end_index: ByteIndex) -> Option<FileRange> {
         if end_index < start_index {
             // maybe something goes wrong with syntax.rs
             // sometimes end_index < start_index.
@@ -216,10 +210,7 @@ impl std::fmt::Display for FileRange {
 /// Path concat from
 pub fn path_concat(p1: &Path, p2: &Path) -> PathBuf {
     let p2: Vec<_> = p2.components().collect();
-    let is_abs = matches!(
-        p2.first().unwrap(),
-        Component::RootDir | Component::Prefix(_)
-    );
+    let is_abs = matches!(p2.first().unwrap(), Component::RootDir | Component::Prefix(_));
     let mut p1: Vec<_> = p1.components().collect();
     normal_path_components(if is_abs {
         &p2
@@ -277,13 +268,7 @@ impl From<&Location> for PathAndRange {
     fn from(value: &Location) -> Self {
         Self {
             range: value.range,
-            fpath: value
-                .uri
-                .to_file_path()
-                .unwrap()
-                .to_str()
-                .unwrap()
-                .to_string(),
+            fpath: value.uri.to_file_path().unwrap().to_str().unwrap().to_string(),
         }
     }
 }
@@ -315,9 +300,7 @@ impl Timer {
     pub fn done_formatting(self) -> Self {
         match self {
             Timer::Disabled => Timer::Disabled,
-            Timer::DoneParsing(init_time, parse_time) => {
-                Timer::DoneFormatting(init_time, parse_time, Instant::now())
-            }
+            Timer::DoneParsing(init_time, parse_time) => Timer::DoneFormatting(init_time, parse_time, Instant::now()),
             _ => panic!("Timer can only transition to DoneFormatting from DoneParsing state"),
         }
     }
@@ -370,29 +353,30 @@ pub const PROJECT_FILE_NAME: &str = "Move.toml";
 
 #[cfg(not(target_os = "windows"))]
 pub fn cpu_pprof(_seconds: u64) {
-    use std::fs::File;
-    use std::str::FromStr;
+    use std::{fs::File, str::FromStr};
     let guard = pprof::ProfilerGuardBuilder::default()
         .frequency(1000)
         .blocklist(&["libc", "libgcc", "pthread", "vdso"])
         .build()
         .unwrap();
-    std::thread::spawn(move || loop {
-        std::thread::sleep(Duration::new(_seconds, 0));
-        match guard.report().build() {
-            Result::Ok(report) => {
-                // let mut tmp = std::env::temp_dir();
-                let mut tmp = PathBuf::from_str("/Users/yuyang/.movefmt").unwrap();
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(Duration::new(_seconds, 0));
+            match guard.report().build() {
+                Result::Ok(report) => {
+                    // let mut tmp = std::env::temp_dir();
+                    let mut tmp = PathBuf::from_str("/Users/yuyang/.movefmt").unwrap();
 
-                tmp.push("movefmt-flamegraph.svg");
-                let file = File::create(tmp.clone()).unwrap();
-                report.flamegraph(file).unwrap();
-                tracing::debug!("pprof file at {:?}", tmp.as_path());
-            }
-            Result::Err(e) => {
-                tracing::error!("build report failed,err:{}", e);
-            }
-        };
+                    tmp.push("movefmt-flamegraph.svg");
+                    let file = File::create(tmp.clone()).unwrap();
+                    report.flamegraph(file).unwrap();
+                    tracing::debug!("pprof file at {:?}", tmp.as_path());
+                }
+                Result::Err(e) => {
+                    tracing::error!("build report failed,err:{}", e);
+                }
+            };
+        }
     });
 }
 #[cfg(target_os = "windows")]
