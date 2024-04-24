@@ -24,7 +24,6 @@ macro_rules! impl_convert_loc {
         }
     };
 }
-extern crate move_ir_types;
 
 pub mod core;
 pub mod syntax_fmt;

@@ -39,21 +39,21 @@ pub struct NestData {
 
 impl NestData {
     pub fn start_token_tree(&self) -> TokenTree {
-        TokenTree::SimpleToken {
+        TokenTree::Simple(SimpleToken {
             content: self.kind.start_tok().to_string(),
             pos: self.start_pos,
             tok: self.kind.start_tok(),
             note: None,
-        }
+        })
     }
 
     pub fn end_token_tree(&self) -> TokenTree {
-        TokenTree::SimpleToken {
+        TokenTree::Simple(SimpleToken {
             content: self.kind.end_tok().to_string(),
             pos: self.end_pos,
             tok: self.kind.end_tok(),
             note: None,
-        }
+        })
     }
 }
 
@@ -106,21 +106,27 @@ impl NestKind {
 
 #[derive(Clone, serde::Serialize)]
 pub enum TokenTree {
-    SimpleToken {
-        content: String,
-        #[serde(skip_serializing)]
-        pos: u32, // start offset in file buffer.
-        #[serde(skip_serializing)]
-        tok: Tok,
-        #[serde(skip_serializing)]
-        note: Option<Note>,
-    },
-    Nested {
-        elements: Vec<TokenTree>,
-        data: NestData,
-        #[serde(skip_serializing)]
-        note: Option<Note>,
-    },
+    Simple(SimpleToken),
+    Nested(NestedToken),
+}
+
+#[derive(Clone, serde::Serialize)]
+pub struct SimpleToken {
+    pub content: String,
+    #[serde(skip_serializing)]
+    pub pos: u32, // start offset in file buffer.
+    #[serde(skip_serializing)]
+    pub tok: Tok,
+    #[serde(skip_serializing)]
+    pub note: Option<Note>,
+}
+
+#[derive(Clone, serde::Serialize)]
+pub struct NestedToken {
+    pub elements: Vec<TokenTree>,
+    pub data: NestData,
+    #[serde(skip_serializing)]
+    pub note: Option<Note>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
@@ -144,8 +150,14 @@ pub enum Note {
 
 impl Default for TokenTree {
     fn default() -> Self {
-        TokenTree::SimpleToken {
-            content: "".to_string(),
+        Self::Simple(Default::default())
+    }
+}
+
+impl Default for SimpleToken {
+    fn default() -> Self {
+        SimpleToken {
+            content: Default::default(),
             pos: 0,
             tok: Tok::EOF,
             note: None,
@@ -153,59 +165,137 @@ impl Default for TokenTree {
     }
 }
 
-impl TokenTree {
-    pub fn get_note(&self) -> Option<Note> {
-        match self {
-            TokenTree::SimpleToken {
-                content: _,
-                pos: _,
-                tok: _,
-                note,
-            } => *note,
-            TokenTree::Nested {
-                elements: _,
-                data: _,
-                note,
-            } => *note,
-        }
+pub trait TokenTreeInfo {
+    fn note(&self) -> Option<Note>;
+
+    fn start_token(&self) -> Tok;
+
+    fn end_token(&self) -> Tok;
+
+    fn end_pos(&self) -> u32;
+
+    fn is_pound(&self) -> bool {
+        self.token() == Some(Tok::NumSign)
     }
-    pub fn end_pos(&self) -> u32 {
+
+    fn token(&self) -> Option<Tok> {
+        None
+    }
+
+    fn content(&self) -> Option<&str> {
+        None
+    }
+
+    fn as_simple(&self) -> Option<&SimpleToken> {
+        None
+    }
+
+    fn as_nested(&self) -> Option<&NestedToken> {
+        None
+    }
+}
+
+impl TokenTreeInfo for SimpleToken {
+    fn note(&self) -> Option<Note> {
+        self.note
+    }
+
+    fn start_token(&self) -> Tok {
+        self.tok
+    }
+
+    fn end_token(&self) -> Tok {
+        self.tok
+    }
+
+    fn end_pos(&self) -> u32 {
+        self.pos + self.content.len() as u32
+    }
+
+    fn token(&self) -> Option<Tok> {
+        Some(self.tok)
+    }
+
+    fn content(&self) -> Option<&str> {
+        Some(&self.content)
+    }
+
+    fn as_simple(&self) -> Option<&SimpleToken> {
+        Some(self)
+    }
+}
+
+impl TokenTreeInfo for NestedToken {
+    fn note(&self) -> Option<Note> {
+        self.note
+    }
+
+    fn start_token(&self) -> Tok {
+        self.data.kind.start_tok()
+    }
+
+    fn end_token(&self) -> Tok {
+        self.data.kind.end_tok()
+    }
+
+    fn end_pos(&self) -> u32 {
+        self.data.end_pos
+    }
+
+    fn as_nested(&self) -> Option<&NestedToken> {
+        Some(self)
+    }
+}
+
+impl TokenTreeInfo for TokenTree {
+    fn note(&self) -> Option<Note> {
         match self {
-            TokenTree::SimpleToken {
-                content,
-                pos,
-                tok: _,
-                note: _,
-            } => pos + (content.len() as u32),
-            TokenTree::Nested {
-                elements: _,
-                data: kind,
-                note: _,
-            } => kind.end_pos,
+            TokenTree::Simple(t) => t.note(),
+            TokenTree::Nested(t) => t.note(),
         }
     }
 
-    pub fn is_pound(&self) -> bool {
+    fn start_token(&self) -> Tok {
         match self {
-            TokenTree::SimpleToken { tok, .. } => *tok == Tok::NumSign,
-            TokenTree::Nested { .. } => false,
+            TokenTree::Simple(t) => t.start_token(),
+            TokenTree::Nested(t) => t.start_token(),
         }
     }
 
-    pub fn simple_str(&self) -> Option<&str> {
+    fn end_token(&self) -> Tok {
         match self {
-            TokenTree::SimpleToken {
-                content,
-                pos: _,
-                tok: _,
-                note: _,
-            } => Some(content.as_str()),
-            TokenTree::Nested {
-                elements: _,
-                data: _,
-                note: _,
-            } => None,
+            TokenTree::Simple(t) => t.end_token(),
+            TokenTree::Nested(t) => t.end_token(),
         }
+    }
+
+    fn end_pos(&self) -> u32 {
+        match self {
+            TokenTree::Simple(t) => t.end_pos(),
+            TokenTree::Nested(t) => t.end_pos(),
+        }
+    }
+
+    fn token(&self) -> Option<Tok> {
+        match self {
+            TokenTree::Simple(t) => t.token(),
+            TokenTree::Nested(t) => t.token(),
+        }
+    }
+
+    fn content(&self) -> Option<&str> {
+        match self {
+            TokenTree::Simple(t) => t.content(),
+            TokenTree::Nested(t) => t.content(),
+        }
+    }
+
+    fn as_simple(&self) -> Option<&SimpleToken> {
+        if let Self::Simple(t) = self { Some(t) } else { None }
+    }
+
+    fn as_nested(&self) -> Option<&NestedToken> {
+        if let Self::Nested(t) = self { Some(t) } else { None }
     }
 }
 
@@ -268,12 +358,12 @@ impl<'a> Parser<'a> {
                 ret.push(self.parse_nested(kind));
                 continue;
             }
-            ret.push(TokenTree::SimpleToken {
+            ret.push(TokenTree::Simple(SimpleToken {
                 content: self.lexer.content().to_string(),
                 pos: self.lexer.start_loc() as u32,
                 tok: self.lexer.peek(),
                 note: self.add_simple_note(self.lexer.start_loc() as u32),
-            });
+            }));
 
             self.lexer.advance().unwrap();
         }
@@ -341,18 +431,18 @@ impl<'a> Parser<'a> {
                 self.adjust_token(Tok::Greater);
                 break;
             }
-            ret.push(TokenTree::SimpleToken {
-                content: self.lexer.content().to_string(),
+            ret.push(TokenTree::Simple(SimpleToken {
+                content: self.lexer.content().to_owned(),
                 pos: self.lexer.start_loc() as u32,
                 tok: self.lexer.peek(),
                 note: self.add_simple_note(self.lexer.start_loc() as u32),
-            });
+            }));
             self.lexer.advance().unwrap();
         }
         debug_assert_eq!(self.lexer.peek(), kind.end_tok());
         let end = self.lexer.start_loc() as u32;
         self.lexer.advance().unwrap();
-        TokenTree::Nested {
+        TokenTree::Nested(NestedToken {
             elements: ret,
             data: NestData {
                 kind,
@@ -360,7 +450,7 @@ impl<'a> Parser<'a> {
                 end_pos: end,
             },
             note,
-        }
+        })
     }
 }
 
@@ -654,10 +744,10 @@ impl<'a> Parser<'a> {
 
 fn analyzer_token_tree_length_(ret: &mut usize, token_tree: &TokenTree, max: usize) {
     match token_tree {
-        TokenTree::SimpleToken { content, .. } => {
+        TokenTree::Simple(SimpleToken { content, .. }) => {
             *ret += content.len();
         }
-        TokenTree::Nested { elements, .. } => {
+        TokenTree::Nested(NestedToken { elements, .. }) => {
             for t in elements.iter() {
                 analyzer_token_tree_length_(ret, t, max);
                 if *ret > max {

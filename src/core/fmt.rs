@@ -14,6 +14,7 @@ use move_compiler::{
     Flags,
 };
 
+use super::token_tree::{NestedToken, SimpleToken, TokenTreeInfo};
 use crate::{
     core::token_tree::{
         analyze_token_tree_length, Comment, CommentExtractor, CommentKind, Delimiter, NestData, NestKind, Note,
@@ -153,22 +154,10 @@ impl Format {
                 pound_sign = None;
             }
             // top level
-            match tree {
-                TokenTree::SimpleToken {
-                    content: _,
-                    pos: _,
-                    tok: _,
-                    note: _,
-                } => {}
-                TokenTree::Nested {
-                    elements: _,
-                    data: kind,
-                    note: _,
-                } => {
-                    if kind.kind == NestKind::Brace {
-                        self.new_line(Some(tree.end_pos()), comments);
-                        self.post_process();
-                    }
+            if let TokenTree::Nested(NestedToken { data: kind, .. }) = tree {
+                if kind.kind == NestKind::Brace {
+                    self.new_line(Some(tree.end_pos()), comments);
+                    self.post_process();
                 }
             }
         }
@@ -184,22 +173,13 @@ impl Format {
         current: &TokenTree,
         next: Option<&TokenTree>,
     ) -> bool {
-        if next.and_then(|x| x.simple_str()) == delimiter.map(|x| x.to_static_str()) {
+        if next.and_then(|x| x.content()) == delimiter.map(|x| x.to_static_str()) {
             return false;
         }
 
         let b_judge_next_token = if let Some((next_tok, next_content)) = next.map(|x| match x {
-            TokenTree::SimpleToken {
-                content,
-                pos: _,
-                tok,
-                note: _,
-            } => (*tok, content.clone()),
-            TokenTree::Nested {
-                elements: _,
-                data: kind,
-                note: _,
-            } => (kind.kind.start_tok(), kind.kind.start_tok().to_string()),
+            TokenTree::Simple(SimpleToken { content, tok, .. }) => (*tok, content.clone()),
+            TokenTree::Nested(NestedToken { data, .. }) => (data.kind.start_tok(), data.kind.start_tok().to_string()),
         }) {
             match next_tok {
                 Token::Friend
@@ -233,17 +213,8 @@ impl Format {
 
         // special case for `}}`
         if match current {
-            TokenTree::SimpleToken {
-                content: _,
-                pos: _,
-                tok: _,
-                note: _,
-            } => false,
-            TokenTree::Nested {
-                elements: _,
-                data: kind,
-                note: _,
-            } => kind.kind == NestKind::Brace,
+            TokenTree::Simple(_) => false,
+            TokenTree::Nested(NestedToken { data, .. }) => data.kind == NestKind::Brace,
         } && kind == NestKind::Brace
             && b_judge_next_token
         {
@@ -263,7 +234,7 @@ impl Format {
         let t = elements.get(index).unwrap();
         let next_t = elements.get(index + 1);
         let d = delimiter.map(|x| x.to_static_str());
-        let t_str = t.simple_str();
+        let t_str = t.content();
 
         let mut new_line = if new_line_mode {
             Self::need_new_line(kind.kind, delimiter, has_colon, t, next_t) || (d == t_str && d.is_some())
@@ -279,15 +250,15 @@ impl Format {
                     while idx != 0 {
                         let ele = elements.get(idx).unwrap();
                         idx -= 1;
-                        if let Some(key) = ele.simple_str() {
+                        if let Some(key) = ele.content() {
                             if key.contains("fun") {
                                 break;
                             }
                         }
-                        if ele.simple_str().is_none() {
+                        if ele.content().is_none() {
                             continue;
                         }
-                        if matches!(ele.simple_str().unwrap(), "acquires" | "reads" | "writes" | "pure") {
+                        if matches!(ele.content().unwrap(), "acquires" | "reads" | "writes" | "pure") {
                             new_line = false;
                             break;
                         }
@@ -297,17 +268,8 @@ impl Format {
         }
 
         if let Some((next_tok, next_content)) = next_t.map(|x| match x {
-            TokenTree::SimpleToken {
-                content,
-                pos: _,
-                tok,
-                note: _,
-            } => (*tok, content.clone()),
-            TokenTree::Nested {
-                elements: _,
-                data: kind,
-                note: _,
-            } => (kind.kind.start_tok(), kind.kind.start_tok().to_string()),
+            TokenTree::Simple(SimpleToken { content, tok, .. }) => (*tok, content.clone()),
+            TokenTree::Nested(NestedToken { data, .. }) => (data.kind.start_tok(), data.kind.start_tok().to_string()),
         }) {
             // ablility not change new line
             if syntax::token_to_ability(next_tok, &next_content).is_some() {
@@ -467,26 +429,19 @@ impl Format {
 
     fn format_single_token(
         &mut self,
-        nested_token: &TokenTree,
+        nested_token: &NestedToken,
         internal_token_idx: usize,
         pound_sign_new_line: bool,
         new_line: bool,
         pound_sign: &mut Option<usize>,
         comments: &[Comment],
     ) {
-        let TokenTree::Nested {
-            elements,
-            data: kind,
-            note: _,
-        } = nested_token
-        else {
-            return;
-        };
+        let NestedToken { elements, data, .. } = nested_token;
         let token = elements.get(internal_token_idx).unwrap();
         let next_t = elements.get(internal_token_idx + 1);
 
-        if !new_line && token.simple_str().is_some() {
-            if let NestKind::Brace = kind.kind {
+        if !new_line && token.content().is_some() {
+            if let NestKind::Brace = data.kind {
                 if elements.len() == 1 {
                     self.ret.push(' ');
                 }
@@ -510,7 +465,7 @@ impl Format {
                 None => true,
             };
             self.process_same_line_comment(token.end_pos(), process_tail_comment_of_line, comments);
-        } else if let NestKind::Brace = kind.kind {
+        } else if let NestKind::Brace = data.kind {
             if elements.len() == 1 {
                 self.ret.push(' ');
             }
@@ -526,7 +481,7 @@ impl Format {
         b_new_line_mode: bool,
         comments: &[Comment],
     ) {
-        let nested_token = TokenTree::Nested {
+        let nested_token = NestedToken {
             elements: elements.to_owned(),
             data: *kind,
             note: None,
@@ -553,7 +508,7 @@ impl Format {
             if Token::Period == self.format_context.current_token {
                 let (continue_dot_cnt, index) = expr_fmt::process_link_access(elements, internal_token_idx + 1);
                 if continue_dot_cnt > 3 && index > internal_token_idx {
-                    self.inc_depth();
+                    self.inc_depth(1);
                     let mut is_dot_new_line = true;
                     while internal_token_idx <= index + 1 {
                         self.format_single_token(
@@ -570,7 +525,7 @@ impl Format {
                     // tracing::debug!("after processed link access, ret = {}", self.ret.clone().into_inner());
                     // tracing::debug!("after processed link access, internal_token_idx = {}, len = {}",
                     // internal_token_idx, len);
-                    self.dec_depth();
+                    self.dec_depth(1);
                     continue;
                 }
             }
@@ -587,235 +542,224 @@ impl Format {
         }
     }
 
-    fn format_nested_token(&mut self, token: &TokenTree, next_token: Option<&TokenTree>, comments: &[Comment]) {
-        if let TokenTree::Nested {
+    fn format_nested_token(&mut self, token: &NestedToken, next_token: Option<&TokenTree>, comments: &[Comment]) {
+        let NestedToken {
             elements,
             data: kind,
             note,
-        } = token
-        {
-            let (delimiter, has_colon) = Self::analyze_token_tree_delimiter(elements);
-            let (b_new_line_mode, opt_mode) = self.get_new_line_mode_begin_nested(kind, elements, note, delimiter);
-            let b_add_indent = !note.map(|x| x == Note::ModuleAddress).unwrap_or_default();
-            let nested_token_head = self.format_context.current_token;
+        } = token;
+        let (delimiter, has_colon) = Self::analyze_token_tree_delimiter(elements);
+        let (b_new_line_mode, opt_mode) = self.get_new_line_mode_begin_nested(kind, elements, note, delimiter);
+        let b_add_indent = !note.map(|x| x == Note::ModuleAddress).unwrap_or_default();
+        let nested_token_head = self.format_context.current_token;
 
-            if b_new_line_mode {
-                tracing::debug!("nested_token_head = [{:?}], add a new line", nested_token_head);
-            }
+        if b_new_line_mode {
+            tracing::debug!("nested_token_head = [{:?}], add a new line", nested_token_head);
+        }
 
-            if Token::NumSign == nested_token_head {
-                self.ret
-                    .push_str(&fun_fmt::process_fun_annotation(*kind, elements.to_vec()));
-                return;
-            }
+        if Token::NumSign == nested_token_head {
+            self.ret
+                .push_str(&fun_fmt::process_fun_annotation(*kind, elements.to_vec()));
+            return;
+        }
 
-            // step1 -- format start_token
-            self.format_token_trees_internal(&kind.start_token_tree(), None, b_new_line_mode, comments);
+        // step1 -- format start_token
+        self.format_token_trees_internal(&kind.start_token_tree(), None, b_new_line_mode, comments);
 
-            // step2 -- paired effect with step6
-            if b_add_indent {
-                self.inc_depth();
-            }
+        // step2 -- paired effect with step6
+        if b_add_indent {
+            self.inc_depth(1);
+        }
 
-            // step3
-            if b_new_line_mode {
-                self.add_new_line_after_nested_begin(kind, elements, b_new_line_mode, comments);
-            }
+        // step3
+        if b_new_line_mode {
+            self.add_new_line_after_nested_begin(kind, elements, b_new_line_mode, comments);
+        }
 
-            // step4 -- format elements
-            let need_change_line_for_each_item_in_paren = if NestKind::ParentTheses == kind.kind {
-                if opt_mode.is_none() {
-                    !expr_fmt::judge_simple_paren_expr(kind, elements, &self.global_cfg)
-                } else {
-                    opt_mode.unwrap_or_default()
-                }
+        // step4 -- format elements
+        let need_change_line_for_each_item_in_paren = if NestKind::ParentTheses == kind.kind {
+            if opt_mode.is_none() {
+                !expr_fmt::judge_simple_paren_expr(kind, elements, &self.global_cfg)
             } else {
-                b_new_line_mode
-            };
-            self.format_each_token_in_nested_elements(
-                kind,
-                elements,
-                delimiter,
-                has_colon,
-                need_change_line_for_each_item_in_paren,
-                comments,
-            );
+                opt_mode.unwrap_or_default()
+            }
+        } else {
+            b_new_line_mode
+        };
+        self.format_each_token_in_nested_elements(
+            kind,
+            elements,
+            delimiter,
+            has_colon,
+            need_change_line_for_each_item_in_paren,
+            comments,
+        );
 
-            // step5 -- add_comments which before kind.end_pos
-            self.add_comments(
-                comments,
-                kind.end_pos,
-                kind.end_token_tree().simple_str().unwrap_or_default().to_string(),
-            );
-            let ret_lines = self.ret.lines().count();
-            let ends_with_whitespace = self.ret.ends_with(' ');
-            // may be already add_a_new_line in step5 by add_comments(doc_comment in tail of line)
-            self.ret = self.ret.trim_end().to_owned();
-            if ends_with_whitespace {
+        // step5 -- add_comments which before kind.end_pos
+        self.add_comments(
+            comments,
+            kind.end_pos,
+            kind.end_token_tree().content().unwrap_or_default().to_string(),
+        );
+        let ret_lines = self.ret.lines().count();
+        let ends_with_whitespace = self.ret.ends_with(' ');
+        // may be already add_a_new_line in step5 by add_comments(doc_comment in tail of line)
+        self.ret = self.ret.trim_end().to_owned();
+        if ends_with_whitespace {
+            self.ret.push(' ');
+        }
+        let had_rm_added_new_line = self.ret.lines().count() < ret_lines;
+
+        // step6 -- paired effect with step2
+        if b_add_indent {
+            self.dec_depth(1);
+        }
+
+        // step7
+        if b_new_line_mode || had_rm_added_new_line {
+            tracing::debug!("end_of_nested_block, b_new_line_mode = true");
+            if nested_token_head != Token::If {
+                self.new_line(Some(kind.end_pos), comments);
+            }
+        }
+
+        // step8 -- format end_token
+        self.format_token_trees_internal(&kind.end_token_tree(), None, false, comments);
+        if let TokenTree::Simple(_) = kind.end_token_tree() {
+            if expr_fmt::need_space(token, next_token) {
                 self.ret.push(' ');
-            }
-            let had_rm_added_new_line = self.ret.lines().count() < ret_lines;
-
-            // step6 -- paired effect with step2
-            if b_add_indent {
-                self.dec_depth();
-            }
-
-            // step7
-            if b_new_line_mode || had_rm_added_new_line {
-                tracing::debug!("end_of_nested_block, b_new_line_mode = true");
-                if nested_token_head != Token::If {
-                    self.new_line(Some(kind.end_pos), comments);
-                }
-            }
-
-            // step8 -- format end_token
-            self.format_token_trees_internal(&kind.end_token_tree(), None, false, comments);
-            if let TokenTree::SimpleToken {
-                content: _,
-                pos: _t_pos,
-                tok: _t_tok,
-                note: _,
-            } = kind.end_token_tree()
-            {
-                if expr_fmt::need_space(token, next_token) {
-                    self.ret.push(' ');
-                }
             }
         }
     }
 
     fn format_simple_token(
         &mut self,
-        token: &TokenTree,
+        token: &SimpleToken,
         next_token: Option<&TokenTree>,
         new_line_after: bool,
         comments: &[Comment],
     ) {
-        if let TokenTree::SimpleToken {
+        let SimpleToken {
             content,
             pos,
             tok,
             note,
-        } = token
-        {
-            // added in 20240115
-            // updated in 20240124
-            if Token::LBrace != *tok
-                && self.syntax_extractor.branch_extractor.need_new_line_after_branch(
-                    &self.last_line(),
-                    *pos,
-                    &self.global_cfg,
-                )
-            {
-                tracing::debug!("need_new_line_after_branch[{:?}], add a new line", content);
-                self.inc_depth();
-                self.new_line(None, comments);
-            }
+        } = token;
 
-            // process `else if`
-            if *tok == Token::Else
-                && next_token.is_some()
-                && (next_token.unwrap().simple_str().unwrap_or_default() == "if"
+        // added in 20240115
+        // updated in 20240124
+        if *tok != Token::LBrace
+            && (self.syntax_extractor.branch_extractor.need_new_line_after_branch(
+                &self.last_line(),
+                *pos,
+                &self.global_cfg,
+            ) || self.syntax_extractor.match_extractor.need_new_line_after_arm(*pos)
+                || self.syntax_extractor.match_extractor.need_new_line_after_match(*pos))
+        {
+            tracing::debug!("need_new_line_after_branch[{:?}], add a new line", content);
+            self.inc_depth(1);
+            self.new_line(None, comments);
+        }
+
+        // process `else if`
+        if *tok == Token::Else
+            && next_token.is_some_and(|tree| {
+                tree.token() == Some(Token::If)
                     || self
                         .syntax_extractor
                         .branch_extractor
-                        .is_nested_within_an_outer_else(*pos))
-            {
-                self.new_line(None, comments);
+                        .is_nested_within_an_outer_else(*pos)
+            })
+        {
+            self.new_line(None, comments);
+        }
+
+        // add blank row between module
+        // this step must before add_comments. because there maybe some comments before new module
+        // https://github.com/movebit/movefmt/issues/1
+        self.maybe_meet_new_module_in_same_file(*tok, next_token, *pos, comments);
+
+        // add comment(xxx) before current simple_token
+        self.add_comments(comments, *pos, content.clone());
+        // simple1:
+        // self.translate_line(*pos) = 6
+        // after processed xxx, self.cur_line = 5;
+        // self.translate_line(*pos) - self.cur_line == 1
+        // """
+        // line5: // comment xxx
+        // line6: simple_token
+        // """
+        if (self.translate_line(*pos) - self.cur_line) > 1 {
+            // There are multiple blank lines between the cur_line and the current code simple_token
+            tracing::debug!(
+                "self.translate_line(*pos) = {}, self.cur_line = {}",
+                self.translate_line(*pos),
+                self.cur_line
+            );
+            tracing::debug!("SimpleToken[{:?}], add a new line", content);
+            self.new_line(None, comments);
+        }
+
+        // added in 20240115
+        // updated in 20240124
+        // updated in 20240222: remove condition `if Tok::RBrace != *tok `
+        if self.depth > 0 {
+            let tok_end_pos = *pos + content.len() as u32;
+            let nested_branch_depth = self
+                .syntax_extractor
+                .branch_extractor
+                .added_new_line_after_branch(tok_end_pos)
+                + self.syntax_extractor.match_extractor.added_new_line_after(tok_end_pos);
+
+            if nested_branch_depth > 0 {
+                tracing::debug!("nested_branch_depth[{:?}] = [{:?}]", content, nested_branch_depth);
+                self.dec_depth(nested_branch_depth);
             }
+        }
 
-            // add blank row between module
-            // this step must before add_comments. because there maybe some comments before new module
-            // https://github.com/movebit/movefmt/issues/1
-            self.maybe_meet_new_module_in_same_file(*tok, next_token, *pos, comments);
+        if *tok == Token::If || *tok == Token::Match {
+            self.format_context.set_env(FormatEnv::FormatExp);
+        }
+        self.format_context.current_token = *tok;
 
-            // add comment(xxx) before current simple_token
-            self.add_comments(comments, *pos, content.clone());
-            /*
-            ** simple1:
-            self.translate_line(*pos) = 6
-            after processed xxx, self.cur_line = 5;
-            self.translate_line(*pos) - self.cur_line == 1
-            """
-            line5: // comment xxx
-            line6: simple_token
-            """
-            */
-            if (self.translate_line(*pos) - self.cur_line) > 1 {
-                // There are multiple blank lines between the cur_line and the current code simple_token
-                tracing::debug!(
-                    "self.translate_line(*pos) = {}, self.cur_line = {}",
-                    self.translate_line(*pos),
-                    self.cur_line
-                );
-                tracing::debug!("SimpleToken[{:?}], add a new line", content);
-                self.new_line(None, comments);
-            }
+        let mut split_line_after_content = false;
+        if self.judge_change_new_line_when_over_limits(*tok, *note, next_token) {
+            tracing::debug!("last_line = {:?}", self.last_line());
+            tracing::debug!(
+                "SimpleToken{:?} too long, add a new line because of split line",
+                content
+            );
 
-            // added in 20240115
-            // updated in 20240124
-            // updated in 20240222: remove condition `if Tok::RBrace != *tok `
-            {
-                let tok_end_pos = *pos + content.len() as u32;
-                let mut nested_branch_depth = self
-                    .syntax_extractor
-                    .branch_extractor
-                    .added_new_line_after_branch(tok_end_pos);
-
-                if nested_branch_depth > 0 {
-                    tracing::debug!("nested_branch_depth[{:?}] = [{:?}]", content, nested_branch_depth);
-                }
-                while nested_branch_depth > 0 {
-                    self.dec_depth();
-                    nested_branch_depth -= 1;
-                }
-            }
-
-            if content == "if" || content == "match" {
-                self.format_context.set_env(FormatEnv::FormatExp);
-            }
-            self.format_context.current_token = *tok;
-
-            let mut split_line_after_content = false;
-            if self.judge_change_new_line_when_over_limits(*tok, *note, next_token) {
-                tracing::debug!("last_line = {:?}", self.last_line());
-                tracing::debug!(
-                    "SimpleToken{:?} too long, add a new line because of split line",
-                    content
-                );
-
-                if matches!(*tok, |Token::Equal| Token::EqualEqual
-                    | Token::EqualEqualGreater
-                    | Token::LessEqualEqualGreater)
-                {
-                    self.ret.push_str(content.as_str());
-                    split_line_after_content = true;
-                }
-                self.inc_depth();
-                self.new_line(None, comments);
-                self.dec_depth();
-            }
-
-            if !split_line_after_content {
+            if matches!(
+                *tok,
+                Token::Equal | Token::EqualEqual | Token::EqualEqualGreater | Token::LessEqualEqualGreater
+            ) {
                 self.ret.push_str(content.as_str());
+                split_line_after_content = true;
             }
+            self.inc_depth(1);
+            self.new_line(None, comments);
+            self.dec_depth(1);
+        }
 
-            self.cur_line = self.translate_line(*pos);
-            if new_line_after {
-                return;
-            }
-            if self.judge_change_new_line_when_over_limits(*tok, *note, next_token) {
-                tracing::debug!("last_line = {:?}", self.last_line());
-                tracing::debug!("SimpleToken{:?}, add a new line because of split line", content);
-                self.inc_depth();
-                self.new_line(None, comments);
-                self.dec_depth();
-                return;
-            }
-            if expr_fmt::need_space(token, next_token) {
-                self.ret.push(' ');
-            }
+        if !split_line_after_content {
+            self.ret.push_str(content.as_str());
+        }
+
+        self.cur_line = self.translate_line(*pos);
+        if new_line_after {
+            return;
+        }
+        if self.judge_change_new_line_when_over_limits(*tok, *note, next_token) {
+            tracing::debug!("last_line = {:?}", self.last_line());
+            tracing::debug!("SimpleToken{:?}, add a new line because of split line", content);
+            self.inc_depth(1);
+            self.new_line(None, comments);
+            self.dec_depth(1);
+            return;
+        }
+        if expr_fmt::need_space(token, next_token) {
+            self.ret.push(' ');
         }
     }
 
@@ -827,17 +771,8 @@ impl Format {
         comments: &[Comment],
     ) {
         match token {
-            TokenTree::Nested {
-                elements: _,
-                data: _,
-                note: _,
-            } => self.format_nested_token(token, next_token, comments),
-            TokenTree::SimpleToken {
-                content: _,
-                pos: _,
-                tok: _,
-                note: _,
-            } => self.format_simple_token(token, next_token, new_line_after, comments),
+            TokenTree::Nested(nested) => self.format_nested_token(nested, next_token, comments),
+            TokenTree::Simple(simple) => self.format_simple_token(simple, next_token, new_line_after, comments),
         }
     }
 
@@ -943,15 +878,11 @@ impl Format {
 }
 
 impl Format {
-    fn inc_depth(&mut self) {
-        self.depth += 1;
+    fn inc_depth(&mut self, amount: usize) {
+        self.depth += amount;
     }
-    fn dec_depth(&mut self) {
-        if self.depth == 0 {
-            eprintln!("old depth is zero, return");
-            return;
-        }
-        self.depth -= 1;
+    fn dec_depth(&mut self, amount: usize) {
+        self.depth = self.depth.saturating_sub(amount)
     }
 
     fn no_space_or_new_line_for_comment(&self) -> bool {
@@ -981,12 +912,7 @@ impl Format {
         let mut has_colon = false;
         for t in token_tree.iter() {
             match t {
-                TokenTree::SimpleToken {
-                    content,
-                    pos: _,
-                    tok: _,
-                    note: _,
-                } => match content.as_str() {
+                TokenTree::Simple(SimpleToken { content, .. }) => match content.as_str() {
                     ";" => {
                         d = Some(Delimiter::Semicolon);
                     }
@@ -1009,15 +935,11 @@ impl Format {
 
     fn analyzer_token_tree_start_pos_(&self, ret: &mut u32, token_tree: &TokenTree) {
         match token_tree {
-            TokenTree::SimpleToken { content: _, pos, .. } => {
+            TokenTree::Simple(SimpleToken { pos, .. }) => {
                 *ret = *pos;
             }
-            TokenTree::Nested {
-                elements: _,
-                data: kind,
-                ..
-            } => {
-                *ret = kind.start_pos;
+            TokenTree::Nested(NestedToken { data, .. }) => {
+                *ret = data.start_pos;
             }
         }
     }
@@ -1120,7 +1042,7 @@ impl Format {
                 self.new_line(None, comments);
             }
             self.format_context.set_env(FormatEnv::FormatModule);
-            self.format_context.cur_module_name = next_token.unwrap().simple_str().unwrap_or_default().to_string();
+            self.format_context.cur_module_name = next_token.unwrap().content().unwrap_or_default().to_string();
             // Note: You can get the token tree of the entire format_context.env here
         }
     }
@@ -1133,21 +1055,7 @@ impl Format {
 
     fn tok_suitable_for_new_line(tok: Token, note: Option<Note>, next: Option<&TokenTree>) -> bool {
         // special case
-        if next
-            .and_then(|x| match x {
-                TokenTree::SimpleToken {
-                    content: _,
-                    pos: _,
-                    tok: _,
-                    note: _,
-                } => None,
-                TokenTree::Nested {
-                    elements: _,
-                    data: kind,
-                    note: _,
-                } => Some(kind.kind == NestKind::Type),
-            })
-            .unwrap_or_default()
+        if next.is_some_and(|x| matches!(x, TokenTree::Nested(NestedToken { data, .. }) if data.kind == NestKind::Type))
         {
             // tracing::debug!("tok_suitable_for_new_line ret false");
             return false;

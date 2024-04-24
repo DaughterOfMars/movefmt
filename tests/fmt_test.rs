@@ -6,7 +6,7 @@ use std::{collections::BTreeMap, path::Path};
 use move_command_line_common::files::FileHash;
 use move_compiler::{editions::Edition, parser::lexer::Lexer, shared::CompilationEnv, Flags};
 use movefmt::{
-    core::token_tree::{CommentExtractor, CommentExtractorErr, TokenTree},
+    core::token_tree::{CommentExtractor, CommentExtractorErr, NestedToken, SimpleToken, TokenTree},
     tools::{movefmt_diff, syntax::parse_file_string, utils::*},
 };
 use tracing_subscriber::EnvFilter;
@@ -178,12 +178,7 @@ fn extract_tokens(content: &str) -> Result<Vec<ExtractToken>, Vec<String>> {
     line_mapping.update(p.to_path_buf(), content);
     fn collect_token_tree(ret: &mut Vec<ExtractToken>, m: &FileLineMapping, t: &TokenTree) {
         match t {
-            TokenTree::SimpleToken {
-                content,
-                pos,
-                tok: _tok,
-                note: _,
-            } => {
+            TokenTree::Simple(SimpleToken { content, pos, .. }) => {
                 let loc = m.translate(&Path::new(".").to_path_buf(), *pos, *pos).unwrap();
 
                 ret.push(ExtractToken {
@@ -192,11 +187,9 @@ fn extract_tokens(content: &str) -> Result<Vec<ExtractToken>, Vec<String>> {
                     col: loc.col_start,
                 });
             }
-            TokenTree::Nested {
-                elements,
-                data: kind,
-                note: _,
-            } => {
+            TokenTree::Nested(NestedToken {
+                elements, data: kind, ..
+            }) => {
                 let start_loc = m
                     .translate(&Path::new(".").to_path_buf(), kind.start_pos, kind.start_pos)
                     .unwrap();

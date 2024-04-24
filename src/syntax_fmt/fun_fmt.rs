@@ -18,7 +18,7 @@ use move_compiler::{
 use move_ir_types::location::*;
 
 use crate::{
-    core::token_tree::{NestData, NestKind, TokenTree},
+    core::token_tree::{NestData, NestKind, NestedToken, SimpleToken, TokenTree, TokenTreeInfo},
     syntax_fmt::expr_fmt,
     tools::{syntax::parse_file_string, utils::FileLineMappingOneFile},
 };
@@ -455,63 +455,47 @@ pub(crate) fn process_fun_ret_ty(fmt_buffer: &str, config: &Config) -> String {
     result
 }
 
-pub(crate) fn process_fun_annotation(kind: NestData, elements: Vec<TokenTree>) -> String {
-    fn process_simple_token(token: &TokenTree, next_token: Option<&TokenTree>) -> String {
+pub(crate) fn process_fun_annotation(data: NestData, elements: Vec<TokenTree>) -> String {
+    fn process_simple_token(token: &SimpleToken, next_token: Option<&TokenTree>) -> String {
         let mut fmt_result_str = "".to_string();
-        fmt_result_str.push_str(token.simple_str().unwrap_or_default());
+        fmt_result_str.push_str(&token.content);
         if expr_fmt::need_space(token, next_token) {
             fmt_result_str.push(' ');
         }
         fmt_result_str
     }
 
-    fn process_nested_token(nested_token_tree: &TokenTree) -> String {
-        let mut fmt_result_str = "".to_string();
-        if let TokenTree::Nested {
-            elements,
-            data: kind,
-            note: _,
-        } = nested_token_tree
-        {
-            fmt_result_str.push_str(kind.start_token_tree().simple_str().unwrap_or_default());
-            let mut internal_token_idx = 0;
-            while internal_token_idx < elements.len() {
-                let t = elements.get(internal_token_idx).unwrap();
-                let next_t = elements.get(internal_token_idx + 1);
-                fmt_result_str.push_str(&process_token_trees(t, next_t));
-                internal_token_idx += 1;
-            }
-            fmt_result_str.push_str(kind.end_token_tree().simple_str().unwrap_or_default());
+    fn process_nested_token(nested_token_tree: &NestedToken) -> String {
+        let mut fmt_result_str = String::new();
+        fmt_result_str.push_str(nested_token_tree.data.start_token_tree().content().unwrap_or_default());
+        let mut internal_token_idx = 0;
+        while internal_token_idx < nested_token_tree.elements.len() {
+            let t = nested_token_tree.elements.get(internal_token_idx).unwrap();
+            let next_t = nested_token_tree.elements.get(internal_token_idx + 1);
+            fmt_result_str.push_str(&process_token_trees(t, next_t));
+            internal_token_idx += 1;
         }
+        fmt_result_str.push_str(nested_token_tree.data.end_token_tree().content().unwrap_or_default());
         fmt_result_str
     }
 
     fn process_token_trees(token: &TokenTree, next_token: Option<&TokenTree>) -> String {
         match token {
-            TokenTree::Nested {
-                elements: _,
-                data: _,
-                note: _,
-            } => process_nested_token(token),
-            TokenTree::SimpleToken {
-                content: _,
-                pos: _,
-                tok: _,
-                note: _,
-            } => process_simple_token(token, next_token),
+            TokenTree::Nested(nested) => process_nested_token(nested),
+            TokenTree::Simple(simple) => process_simple_token(simple, next_token),
         }
     }
 
-    if NestKind::Bracket == kind.kind {
-        let fmt_result_str = process_nested_token(&TokenTree::Nested {
+    if NestKind::Bracket == data.kind {
+        let fmt_result_str = process_nested_token(&NestedToken {
             elements,
-            data: kind,
+            data,
             note: None,
         });
         tracing::debug!("fmt_result_str = {}", fmt_result_str);
         return fmt_result_str;
     }
-    "".to_string()
+    String::new()
 }
 
 pub fn fmt_fun(fmt_buffer: &str, config: &Config) -> String {
