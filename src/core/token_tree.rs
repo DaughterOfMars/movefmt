@@ -351,7 +351,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_tokens(mut self) -> Vec<TokenTree> {
-        let mut ret = vec![];
+        let mut ret = Vec::new();
         self.lexer.advance().unwrap();
         while self.lexer.peek() != Tok::EOF {
             if let Some(kind) = self.is_nest_start() {
@@ -403,21 +403,22 @@ impl<'a> Parser<'a> {
         debug_assert!(self.lexer.peek() == kind.start_tok());
         let start = self.lexer.start_loc() as u32;
         self.lexer.advance().unwrap();
-        let mut ret = vec![];
-        let mut note = None;
-        if self.struct_definitions.iter().any(|x| x.0 <= start && x.1 >= start) && kind == NestKind::Brace {
-            note = Some(Note::StructDefinition);
-        }
-        if self.fun_body.contains(&start) {
-            note = Some(Note::FunBody);
-        }
-        if self
+        let mut ret = Vec::new();
+        let note = if self.struct_definitions.iter().any(|x| x.0 <= start && x.1 >= start) && kind == NestKind::Brace {
+            Some(Note::StructDefinition)
+        } else if self.enum_definitions.iter().any(|x| x.0 <= start && x.1 >= start) && kind == NestKind::Brace {
+            Some(Note::EnumDefinition)
+        } else if self.fun_body.contains(&start) {
+            Some(Note::FunBody)
+        } else if self
             .address_module
             .iter()
             .any(|(addr, modname)| *addr < start && start < *modname)
         {
-            note = Some(Note::ModuleAddress);
-        }
+            Some(Note::ModuleAddress)
+        } else {
+            None
+        };
 
         while self.lexer.peek() != Tok::EOF {
             if self.lexer.peek() == kind.end_tok() {

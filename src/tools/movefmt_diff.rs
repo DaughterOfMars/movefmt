@@ -108,7 +108,7 @@ impl std::str::FromStr for ModifiedLines {
     type Err = ();
 
     fn from_str(s: &str) -> Result<ModifiedLines, ()> {
-        let mut chunks = vec![];
+        let mut chunks = Vec::new();
 
         let mut lines = s.lines();
         while let Some(header) = lines.next() {

@@ -349,7 +349,7 @@ pub fn split_if_else_in_let_block(fmt_buffer: &str, config: &Config) -> String {
         let branch_str = &fmt_buffer[0..let_if_else_loc.end() as usize];
         let mut lexer = Lexer::new(branch_str, FileHash::empty(), Edition::DEVELOPMENT);
         lexer.advance().unwrap();
-        let mut else_in_let_vec = vec![];
+        let mut else_in_let_vec = Vec::new();
         while lexer.peek() != Tok::EOF {
             if lexer.start_loc() >= else_branch_in_let_loc.start() as usize {
                 break;
@@ -364,7 +364,7 @@ pub fn split_if_else_in_let_block(fmt_buffer: &str, config: &Config) -> String {
         (ret_pos.0, ret_pos.1)
     };
 
-    let mut need_split_idx = vec![];
+    let mut need_split_idx = Vec::new();
     for let_if_else_idx in 0..branch_extractor.let_if_else.let_if_else_block.len() {
         let start = branch_extractor.let_if_else.let_if_else_block[let_if_else_idx].start;
         let end = branch_extractor.let_if_else.let_if_else_block[let_if_else_idx].end;

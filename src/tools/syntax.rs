@@ -197,9 +197,9 @@ where
 {
     adjust_token(context.tokens, end_token);
     if match_token(context.tokens, end_token)? {
-        return Ok(vec![]);
+        return Ok(Vec::new());
     }
-    let mut v = vec![];
+    let mut v = Vec::new();
     loop {
         if context.tokens.peek() == Tok::Comma {
             let current_loc = context.tokens.start_loc();
@@ -242,7 +242,7 @@ where
     C: FnMut(&mut Context) -> Result<bool, Box<Diagnostic>>,
     F: Fn(&mut Context) -> Result<R, Box<Diagnostic>>,
 {
-    let mut v = vec![];
+    let mut v = Vec::new();
     loop {
         v.push(parse_list_item(context)?);
         if !parse_list_continue(context)? {
@@ -578,7 +578,7 @@ fn parse_attribute(context: &mut Context) -> Result<Attribute, Box<Diagnostic>> 
 // Parse attributes. Used to annotate a variety of AST nodes
 //      Attributes = ("#" "[" Comma<Attribute> "]")*
 fn parse_attributes(context: &mut Context) -> Result<Vec<Attributes>, Box<Diagnostic>> {
-    let mut attributes_vec = vec![];
+    let mut attributes_vec = Vec::new();
     while let Tok::NumSign = context.tokens.peek() {
         let start_loc = context.tokens.start_loc();
         context.tokens.advance()?;
@@ -860,12 +860,12 @@ fn parse_sequence_item(context: &mut Context) -> Result<SequenceItem, Box<Diagno
 // Note that this does not include the opening brace of a block but it
 // does consume the closing right brace.
 fn parse_sequence(context: &mut Context) -> Result<Sequence, Box<Diagnostic>> {
-    let mut uses = vec![];
+    let mut uses = Vec::new();
     while context.tokens.peek() == Tok::Use {
-        uses.push(parse_use_decl(vec![], context)?);
+        uses.push(parse_use_decl(Vec::new(), context)?);
     }
 
-    let mut seq: Vec<SequenceItem> = vec![];
+    let mut seq: Vec<SequenceItem> = Vec::new();
     let mut last_semicolon_loc = None;
     let mut eopt = None;
     while context.tokens.peek() != Tok::RBrace {
@@ -1760,7 +1760,7 @@ fn parse_type_parameter(context: &mut Context) -> Result<(Name, Vec<Ability>), B
             parse_ability,
         )?
     } else {
-        vec![]
+        Vec::new()
     };
     Ok((n, ability_constraints))
 }
@@ -1794,7 +1794,7 @@ fn parse_optional_type_parameters(context: &mut Context) -> Result<Vec<(Name, Ve
             "a type parameter",
         )
     } else {
-        Ok(vec![])
+        Ok(Vec::new())
     }
 }
 
@@ -1810,7 +1810,7 @@ fn parse_struct_type_parameters(context: &mut Context) -> Result<Vec<DatatypeTyp
             "a type parameter",
         )
     } else {
-        Ok(vec![])
+        Ok(Vec::new())
     }
 }
 
@@ -2215,7 +2215,7 @@ fn parse_address_block(
     let modules = match context.tokens.peek() {
         Tok::LBrace => {
             context.tokens.advance()?;
-            let mut modules = vec![];
+            let mut modules = Vec::new();
             while context.tokens.peek() != Tok::RBrace {
                 let attributes = parse_attributes(context)?;
                 modules.push(parse_module(attributes, context)?);
@@ -2324,7 +2324,7 @@ fn parse_module(attributes: Vec<Attributes>, context: &mut Context) -> Result<Mo
     };
     consume_token(context.tokens, Tok::LBrace)?;
 
-    let mut members = vec![];
+    let mut members = Vec::new();
     while context.tokens.peek() != Tok::RBrace {
         members.push({
             let attributes = parse_attributes(context)?;
@@ -2386,7 +2386,7 @@ fn parse_module(attributes: Vec<Attributes>, context: &mut Context) -> Result<Mo
 //      File =
 //          (<Attributes> (<AddressBlock> | <Module> | <Script>))*
 fn parse_file(context: &mut Context) -> Result<Vec<Definition>, Box<Diagnostic>> {
-    let mut defs = vec![];
+    let mut defs = Vec::new();
     while context.tokens.peek() != Tok::EOF {
         let attributes = parse_attributes(context)?;
         defs.push(match context.tokens.peek() {

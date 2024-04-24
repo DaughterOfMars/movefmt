@@ -37,12 +37,12 @@ pub struct FunExtractor {
 impl FunExtractor {
     pub fn new(fmt_buffer: &str) -> Self {
         let mut this_fun_extractor = Self {
-            loc_vec: vec![],
-            ret_ty_loc_vec: vec![],
-            body_loc_vec: vec![],
-            loc_line_vec: vec![],
+            loc_vec: Vec::new(),
+            ret_ty_loc_vec: Vec::new(),
+            body_loc_vec: Vec::new(),
+            loc_line_vec: Vec::new(),
             line_mapping: FileLineMappingOneFile::default(),
-            belong_module_for_fn: vec![],
+            belong_module_for_fn: Vec::new(),
             cur_module_id: 0,
         };
 
@@ -162,7 +162,7 @@ pub(crate) fn fun_header_specifier_fmt(specifier: &str, indent_str: &str) -> Str
 
     tracing::debug!("fun_specifier_str = {}", specifier);
 
-    let mut fun_specifiers_code = vec![];
+    let mut fun_specifiers_code = Vec::new();
     let mut lexer = Lexer::new(specifier, FileHash::empty(), Edition::DEVELOPMENT);
     lexer.advance().unwrap();
     while lexer.peek() != Tok::EOF {
@@ -175,7 +175,7 @@ pub(crate) fn fun_header_specifier_fmt(specifier: &str, indent_str: &str) -> Str
     }
 
     // let tokens: Vec<&str> = specifier.split(' ').collect();
-    let mut fun_specifiers = vec![];
+    let mut fun_specifiers = Vec::new();
     for token in specifier.split_whitespace() {
         fun_specifiers.push(token);
         if matches!(

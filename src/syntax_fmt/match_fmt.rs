@@ -7,7 +7,6 @@ use crate::tools::utils::FileLineMappingOneFile;
 
 #[derive(Default, Debug)]
 pub struct MatchBlock {
-    pub match_block_loc_vec: Vec<Loc>,
     pub arm_loc_vec: Vec<Loc>,
 }
 
@@ -34,7 +33,6 @@ impl MatchExtractor {
 
     fn collect_expr(&mut self, e: &Exp) {
         if let Exp_::Match(_, arms) = &e.value {
-            self.match_block.match_block_loc_vec.push(arms.loc);
             for arm in &arms.value {
                 self.match_block.arm_loc_vec.push(arm.loc);
                 self.collect_expr(&arm.value.rhs);
@@ -88,56 +86,27 @@ impl MatchExtractor {
         }
     }
 
-    pub(crate) fn need_new_line_after_match(&mut self, match_start_pos: ByteIndex) -> bool {
-        for match_loc in &self.match_block.match_block_loc_vec {
-            if match_loc.start() == match_start_pos {
-                let new_line_cnt = if self.added_new_lines.contains_key(&match_loc.start()) {
-                    self.added_new_lines[&match_loc.start()]
-                } else {
-                    0
-                };
-                self.added_new_lines.insert(match_loc.start(), new_line_cnt + 1);
-                return true;
-            }
-        }
-        false
-    }
-
     pub(crate) fn need_new_line_after_arm(&mut self, arm_start_pos: ByteIndex) -> bool {
         for arm_loc in &self.match_block.arm_loc_vec {
             if arm_loc.start() == arm_start_pos {
-                let new_line_cnt = if self.added_new_lines.contains_key(&arm_loc.start()) {
-                    self.added_new_lines[&arm_loc.start()]
-                } else {
-                    0
-                };
-                self.added_new_lines.insert(arm_loc.start(), new_line_cnt + 1);
+                *self.added_new_lines.entry(arm_loc.end()).or_default() += 1;
                 return true;
             }
         }
         false
-    }
-
-    pub(crate) fn added_new_line_after_match(&self, match_end_pos: ByteIndex) -> usize {
-        for match_loc in &self.match_block.match_block_loc_vec {
-            if match_loc.end() == match_end_pos && self.added_new_lines.contains_key(&match_loc.end()) {
-                return self.added_new_lines[&match_loc.end()];
-            }
-        }
-        0
     }
 
     pub(crate) fn added_new_line_after_arm(&self, arm_end_pos: ByteIndex) -> usize {
         for arm_loc in &self.match_block.arm_loc_vec {
-            if arm_loc.end() == arm_end_pos && self.added_new_lines.contains_key(&arm_loc.end()) {
-                return self.added_new_lines[&arm_loc.end()];
+            if arm_loc.end() == arm_end_pos {
+                return self.added_new_lines.get(&arm_loc.end()).copied().unwrap_or_default();
             }
         }
         0
     }
 
     pub(crate) fn added_new_line_after(&self, branch_end_pos: ByteIndex) -> usize {
-        self.added_new_line_after_match(branch_end_pos) + self.added_new_line_after_arm(branch_end_pos)
+        self.added_new_line_after_arm(branch_end_pos)
     }
 
     pub(crate) fn preprocess(&mut self, module_defs: &[Definition]) {

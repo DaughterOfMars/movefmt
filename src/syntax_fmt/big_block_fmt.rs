@@ -23,7 +23,7 @@ pub struct BigBlockExtractor {
 impl BigBlockExtractor {
     pub fn new(fmt_buffer: &str) -> Self {
         let mut big_block_extractor = Self {
-            blk_loc_vec: vec![],
+            blk_loc_vec: Vec::new(),
             line_mapping: FileLineMappingOneFile::default(),
         };
 
