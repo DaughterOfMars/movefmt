@@ -1034,7 +1034,7 @@ fn parse_term(context: &mut Context) -> Result<Exp, Box<Diagnostic>> {
 fn is_control_exp(tok: Tok) -> bool {
     matches!(
         tok,
-        Tok::If | Tok::Match | Tok::While | Tok::Loop | Tok::Return | Tok::Abort
+        Tok::If | Tok::Match | Tok::While | Tok::Loop | Tok::Return | Tok::Abort | Tok::BlockLabel
     )
 }
 
@@ -1059,7 +1059,9 @@ fn parse_control_exp(context: &mut Context) -> Result<(Exp, bool), Box<Diagnosti
         }
     }
     let start_loc = context.tokens.start_loc();
-    match_token(context.tokens, Tok::BlockLabel)?;
+    if match_token(context.tokens, Tok::BlockLabel)? {
+        consume_token(context.tokens, Tok::Colon)?;
+    }
     let (exp_, ends_in_block) = match context.tokens.peek() {
         Tok::If => {
             context.tokens.advance()?;
@@ -1568,7 +1570,13 @@ fn parse_dot_or_index_chain(context: &mut Context) -> Result<Exp, Box<Diagnostic
             Tok::Period => {
                 context.tokens.advance()?;
                 let n = parse_identifier(context)?;
-                Exp_::Dot(Box::new(lhs), n)
+                if matches!(context.tokens.peek(), Tok::Less | Tok::LParen) {
+                    let ty = parse_optional_type_args(context)?;
+                    let args = parse_call_args(context)?;
+                    Exp_::DotCall(Box::new(lhs), n, None, ty, args)
+                } else {
+                    Exp_::Dot(Box::new(lhs), n)
+                }
             }
             Tok::LBracket => {
                 context.tokens.advance()?;
