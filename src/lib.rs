@@ -64,11 +64,11 @@ pub enum FormatError {
 /// Parsed command line options.
 #[derive(Clone, Debug, Default)]
 pub struct GetOptsOptions {
-    quiet: bool,
-    verbose: bool,
-    config_path: Option<PathBuf>,
-    emit_mode: Option<EmitMode>,
-    inline_config: HashMap<String, String>,
+    pub quiet: bool,
+    pub verbose: bool,
+    pub config_path: Option<PathBuf>,
+    pub emit_mode: Option<EmitMode>,
+    pub inline_config: HashMap<String, String>,
 }
 
 impl GetOptsOptions {
