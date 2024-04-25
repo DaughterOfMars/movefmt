@@ -341,24 +341,6 @@ fn parse_module_name(context: &mut Context) -> Result<ModuleName, Box<Diagnostic
     Ok(ModuleName(parse_identifier(context)?))
 }
 
-// Parse a module identifier:
-//      ModuleIdent = <LeadingNameAccess> "::" <ModuleName>
-fn parse_module_ident(context: &mut Context) -> Result<ModuleIdent, Box<Diagnostic>> {
-    let start_loc = context.tokens.start_loc();
-    let address = parse_leading_name_access(context, false)?;
-
-    consume_token_(
-        context.tokens,
-        Tok::ColonColon,
-        start_loc,
-        " after an address in a module identifier",
-    )?;
-    let module = parse_module_name(context)?;
-    let end_loc = context.tokens.previous_end_loc();
-    let loc = make_loc(context.tokens.file_hash(), start_loc, end_loc);
-    Ok(sp(loc, ModuleIdent_ { address, module }))
-}
-
 // Parse a module access (a variable, struct type, or function):
 //      NameAccessChain = <LeadingNameAccess> ( "::" <Identifier> ( "::" <Identifier> )? )?
 // If `allow_wildcard` is true, `*` will be accepted as an identifier.
@@ -2240,30 +2222,34 @@ fn parse_address_block(
 
 // Parse a use declaration:
 //      UseDecl =
-//          "use" <ModuleIdent> <UseAlias> ";" |
-//          "use" <ModuleIdent> :: <UseMember> ";" |
-//          "use" <ModuleIdent> :: "{" Comma<UseMember> "}" ";"
+//          "use" <ModuleIdent> :: <ModuleUse>? ";" |
+//          "use" <LeadingNameAccess> :: "{" Comma<ModuleName (:: ModuleUse?)> "}" ";"
 fn parse_use_decl(attributes: Vec<Attributes>, context: &mut Context) -> Result<UseDecl, Box<Diagnostic>> {
     let start_loc = context.tokens.start_loc();
     consume_token(context.tokens, Tok::Use)?;
-    let ident = parse_module_ident(context)?;
-    let alias_opt = parse_use_alias(context)?;
-    let use_ = match (&alias_opt, context.tokens.peek()) {
-        (None, Tok::ColonColon) => {
-            consume_token(context.tokens, Tok::ColonColon)?;
-            let sub_uses = match context.tokens.peek() {
-                Tok::LBrace => parse_comma_list(
-                    context,
-                    Tok::LBrace,
-                    Tok::RBrace,
-                    parse_use_member,
-                    "a module member alias",
-                )?,
-                _ => vec![parse_use_member(context)?],
-            };
-            Use::ModuleUse(ident, ModuleUse::Members(sub_uses))
+    let address = parse_leading_name_access(context, false)?;
+    consume_token(context.tokens, Tok::ColonColon)?;
+    let use_ = if context.tokens.peek() == Tok::LBrace {
+        Use::NestedModuleUses(
+            address,
+            parse_comma_list(
+                context,
+                Tok::LBrace,
+                Tok::RBrace,
+                parse_nested_module_use,
+                "a nested module use",
+            )?,
+        )
+    } else {
+        let module = parse_module_name(context)?;
+        let loc = make_loc(context.tokens.file_hash(), start_loc, context.tokens.previous_end_loc());
+        let ident = sp(loc, ModuleIdent_ { address, module });
+        if match_token(context.tokens, Tok::ColonColon)? {
+            let module_use = parse_module_use(context)?;
+            Use::ModuleUse(ident, module_use)
+        } else {
+            Use::ModuleUse(ident, ModuleUse::Module(None))
         }
-        _ => Use::ModuleUse(ident, ModuleUse::Module(alias_opt.map(ModuleName))),
     };
     consume_token(context.tokens, Tok::Semicolon)?;
     let loc = make_loc(context.tokens.file_hash(), start_loc, context.tokens.previous_end_loc());
@@ -2289,9 +2275,46 @@ fn parse_use_alias(context: &mut Context) -> Result<Option<Name>, Box<Diagnostic
     })
 }
 
+// Parse a module use:
+//      ModuleUse =
+//          <UseAlias> |
+//          <UseMember> |
+//          "{" Comma<UseMember> "}"
+fn parse_module_use(context: &mut Context) -> Result<ModuleUse, Box<Diagnostic>> {
+    Ok(if context.tokens.peek() == Tok::LBrace {
+        ModuleUse::Members(parse_comma_list(
+            context,
+            Tok::LBrace,
+            Tok::RBrace,
+            parse_use_member,
+            "a module member alias",
+        )?)
+    } else {
+        let module_alias = parse_use_alias(context)?;
+        if module_alias.is_some() {
+            ModuleUse::Module(module_alias.map(ModuleName))
+        } else {
+            let name = parse_identifier(context)?;
+            let alias = parse_use_alias(context)?;
+            ModuleUse::Members(vec![(name, alias)])
+        }
+    })
+}
+
+// Parse a nested module use:
+//      NestedModuleUse = <ModuleName> :: <ModuleUse>
+fn parse_nested_module_use(context: &mut Context) -> Result<(ModuleName, ModuleUse), Box<Diagnostic>> {
+    let name = parse_module_name(context)?;
+    Ok(if match_token(context.tokens, Tok::ColonColon)? {
+        (name, parse_module_use(context)?)
+    } else {
+        (name, ModuleUse::Module(None))
+    })
+}
+
 // Parse a module:
 //      Module =
-//          <DocComments> ( "spec" | "module") (<LeadingNameAccess>::)?<ModuleName> "{"
+//          <DocComments> ( "spec" | "module") (<LeadingNameAccess>::)?<ModuleNasme> "{"
 //              ( <Attributes>
 //                  ( <UseDecl> | <FriendDecl> | <SpecBlock> |
 //                    <DocComments> <ModuleMemberModifiers>
