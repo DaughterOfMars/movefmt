@@ -3,24 +3,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::{
-    collections::HashMap,
     env,
     fs::File,
     io::{self, Write},
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 
 use anyhow::{format_err, Result};
-use commentfmt::{load_config, CliOptions, Config, EmitMode, Verbosity};
+use commentfmt::{load_config, Config};
 use getopts::{Matches, Options};
 use io::Error as IoError;
-use movefmt::{
-    core::fmt::format_entry,
-    tools::{
-        movefmt_diff::{make_diff, print_mismatches_default_message, DIFF_CONTEXT_SIZE},
-        utils::*,
-    },
-};
+use movefmt::{format_files, GetOptsOptions};
 use thiserror::Error;
 use tracing_subscriber::EnvFilter;
 
@@ -164,91 +157,11 @@ fn execute(opts: &Options) -> Result<i32> {
 
             Ok(0)
         }
-        Operation::Format { files } => format(files, &options),
-    }
-}
-
-fn format(files: Vec<PathBuf>, options: &GetOptsOptions) -> Result<i32> {
-    eprintln!("options = {:?}", options);
-    let (mut config, config_path) = load_config(None, Some(options))?;
-    tracing::info!(
-        "config.[verbose, indent] = [{:?}, {:?}], {:?}",
-        config.verbose(),
-        config.indent_size(),
-        options
-    );
-
-    if config.verbose() == Verbosity::Verbose {
-        if let Some(path) = config_path.as_ref() {
-            println!("Using movefmt config file {}", path.display());
+        Operation::Format { files } => {
+            format_files(files, &options)?;
+            Ok(0)
         }
     }
-
-    for file in files {
-        if !file.exists() {
-            eprintln!("Error: file `{}` does not exist", file.to_str().unwrap());
-            continue;
-        } else if file.is_dir() {
-            eprintln!("Error: `{}` is a directory", file.to_str().unwrap());
-            continue;
-        } else {
-            // Check the file directory if the config-path could not be read or not provided
-            if let Some(config_path) = &config_path {
-                if config.verbose() == Verbosity::Verbose {
-                    println!(
-                        "Using movefmt config file {} for {}",
-                        config_path.display(),
-                        file.display()
-                    );
-                }
-            } else {
-                let (local_config, config_path) = load_config(Some(file.parent().unwrap()), Some(options))?;
-                tracing::debug!("local config_path = {:?}", config_path);
-                if local_config.verbose() == Verbosity::Verbose {
-                    if let Some(path) = config_path {
-                        println!(
-                            "Using movefmt local config file {} for {}",
-                            path.display(),
-                            file.display()
-                        );
-                        config = local_config;
-                    }
-                }
-            }
-        }
-
-        let content_origin = std::fs::read_to_string(file.as_path()).unwrap();
-        match format_entry(&content_origin, &config) {
-            Ok(formatted_text) => {
-                let emit_mode = if let Some(op_emit) = options.emit_mode {
-                    op_emit
-                } else {
-                    config.emit_mode()
-                };
-                match emit_mode {
-                    EmitMode::NewFiles => std::fs::write(mk_result_filepath(&file.to_path_buf()), formatted_text)?,
-                    EmitMode::Files => {
-                        std::fs::write(&file, formatted_text)?;
-                    }
-                    EmitMode::Stdout => {
-                        println!("{}", formatted_text);
-                    }
-                    EmitMode::Diff => {
-                        let compare = make_diff(&formatted_text, &content_origin, DIFF_CONTEXT_SIZE);
-                        if !compare.is_empty() {
-                            let mut failures = HashMap::new();
-                            failures.insert(file.to_owned(), compare);
-                            print_mismatches_default_message(failures);
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                tracing::error!("file '{file:?}' skipped: {e:#?}");
-            }
-        }
-    }
-    Ok(0)
 }
 
 fn print_usage_to_stdout(opts: &Options, reason: &str) {
@@ -305,86 +218,4 @@ fn determine_operation(matches: &Matches) -> Result<Operation, OperationError> {
     }
 
     Ok(Operation::Format { files })
-}
-
-/// Parsed command line options.
-#[derive(Clone, Debug, Default)]
-struct GetOptsOptions {
-    quiet: bool,
-    verbose: bool,
-    config_path: Option<PathBuf>,
-    emit_mode: Option<EmitMode>,
-    inline_config: HashMap<String, String>,
-}
-
-impl GetOptsOptions {
-    pub fn from_matches(matches: &Matches) -> Result<GetOptsOptions> {
-        let mut options = GetOptsOptions {
-            verbose: matches.opt_present("verbose"),
-            quiet: matches.opt_present("quiet"),
-            ..Default::default()
-        };
-        if options.verbose && options.quiet {
-            return Err(format_err!("Can't use both `--verbose` and `--quiet`"));
-        }
-
-        options.config_path = matches.opt_str("config-path").map(PathBuf::from);
-        if let Some(ref emit_str) = matches.opt_str("emit") {
-            options.emit_mode = Some(emit_mode_from_emit_str(emit_str)?);
-        }
-        options.inline_config = matches
-            .opt_strs("config")
-            .iter()
-            .flat_map(|config| config.split(','))
-            .map(|key_val| match key_val.char_indices().find(|(_, ch)| *ch == '=') {
-                Some((middle, _)) => {
-                    let (key, val) = (&key_val[..middle], &key_val[middle + 1..]);
-                    if !Config::is_valid_key_val(key, val) {
-                        Err(format_err!("invalid key=val pair: `{}`", key_val))
-                    } else {
-                        Ok((key.to_string(), val.to_string()))
-                    }
-                }
-
-                None => Err(format_err!(
-                    "--config expects comma-separated list of key=val pairs, found `{}`",
-                    key_val
-                )),
-            })
-            .collect::<Result<HashMap<_, _>, _>>()?;
-
-        Ok(options)
-    }
-}
-
-impl CliOptions for GetOptsOptions {
-    fn apply_to(&self, config: &mut Config) {
-        if self.verbose {
-            config.set().verbose(Verbosity::Verbose);
-        } else if self.quiet {
-            config.set().verbose(Verbosity::Quiet);
-        } else {
-            config.set().verbose(Verbosity::Normal);
-        }
-        if let Some(emit_mode) = self.emit_mode {
-            config.set().emit_mode(emit_mode);
-        }
-        for (key, val) in &self.inline_config {
-            config.override_value(key, val);
-        }
-    }
-
-    fn config_path(&self) -> Option<&Path> {
-        self.config_path.as_deref()
-    }
-}
-
-fn emit_mode_from_emit_str(emit_str: &str) -> Result<EmitMode> {
-    match emit_str {
-        "files" => Ok(EmitMode::Files),
-        "new_files" => Ok(EmitMode::NewFiles),
-        "stdout" => Ok(EmitMode::Stdout),
-        "check_diff" => Ok(EmitMode::Diff),
-        _ => Err(format_err!("Invalid value for `--emit`")),
-    }
 }

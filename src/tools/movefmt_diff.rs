@@ -176,7 +176,7 @@ impl OutputWriter {
 }
 
 // Produces a diff between the expected output and actual output of movefmt.
-pub fn make_diff(expected: &str, actual: &str, context_size: usize) -> Vec<Mismatch> {
+pub fn diff(expected: &str, actual: &str, context_size: usize) -> Vec<Mismatch> {
     let mut line_number = 1;
     let mut line_number_orig = 1;
     let mut context_queue: VecDeque<&str> = VecDeque::with_capacity(context_size);
@@ -296,7 +296,7 @@ pub fn assert_output(actual_filename: &Path, expected_filename: &Path) {
         .read_to_string(&mut actual_text)
         .expect("Failed reading target");
 
-    let compare = make_diff(&expected_text, &actual_text, DIFF_CONTEXT_SIZE);
+    let compare = diff(&expected_text, &actual_text, DIFF_CONTEXT_SIZE);
     if !compare.is_empty() {
         let mut failures = HashMap::new();
         failures.insert(actual_filename.to_owned(), compare);

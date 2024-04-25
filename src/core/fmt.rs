@@ -53,7 +53,7 @@ pub struct FormatContext {
 }
 
 impl FormatContext {
-    pub fn new(content: String, env: FormatEnv) -> Self {
+    pub(crate) fn new(content: String, env: FormatEnv) -> Self {
         FormatContext {
             content,
             env,
@@ -92,7 +92,7 @@ pub struct FormatConfig {
 }
 
 impl Format {
-    fn new(global_cfg: Config, content: &str, format_context: FormatContext) -> Self {
+    pub(crate) fn new(global_cfg: Config, content: &str, format_context: FormatContext) -> Self {
         let mut line_mapping = FileLineMappingOneFile::default();
         line_mapping.update(content);
         let syntax_extractor = SyntaxExtractor {
@@ -116,7 +116,7 @@ impl Format {
         }
     }
 
-    fn generate_token_tree(&mut self, content: &str) -> Result<Vec<TokenTree>, Diagnostics> {
+    pub(crate) fn generate_token_tree(&mut self, content: &str) -> Result<Vec<TokenTree>, Diagnostics> {
         let mut env = CompilationEnv::new(Flags::testing(), Vec::new(), BTreeMap::new(), None);
         let (defs, _) = parse_file_string(&mut env, FileHash::empty(), content)?;
         let lexer = Lexer::new(content, FileHash::empty(), Edition::DEVELOPMENT);
@@ -1148,10 +1148,8 @@ impl Format {
     }
 }
 
-pub fn format_entry(content: impl AsRef<str>, config: &Config) -> Result<String, Diagnostics> {
+pub fn format_entry(content: &str, config: &Config) -> Result<String, Diagnostics> {
     let mut timer = Timer::start();
-    let content = content.as_ref();
-
     {
         // https://github.com/movebit/movefmt/issues/2
         let mut env = CompilationEnv::new(Flags::testing(), Vec::new(), BTreeMap::new(), None);
