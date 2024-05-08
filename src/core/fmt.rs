@@ -893,7 +893,7 @@ impl Format {
         self.ret
             .chars()
             .last()
-            .is_some_and(|c| c == '\n' || c == ' ' || c == '(')
+            .is_some_and(|c| c != '\n' && c != ' ' && c != '(')
     }
 
     fn indent(&mut self) {
