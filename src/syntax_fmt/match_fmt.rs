@@ -90,29 +90,6 @@ impl MatchExtractor {
         }
     }
 
-    pub(crate) fn need_new_line_after_arm(&mut self, arm_start_pos: ByteIndex) -> bool {
-        for arm_loc in &self.match_block.arm_loc_vec {
-            if arm_loc.start() == arm_start_pos {
-                *self.added_new_lines.entry(arm_loc.end()).or_default() += 1;
-                return true;
-            }
-        }
-        false
-    }
-
-    pub(crate) fn added_new_line_after_arm(&self, arm_end_pos: ByteIndex) -> usize {
-        for arm_loc in &self.match_block.arm_loc_vec {
-            if arm_loc.end() == arm_end_pos {
-                return self.added_new_lines.get(&arm_loc.end()).copied().unwrap_or_default();
-            }
-        }
-        0
-    }
-
-    pub(crate) fn added_new_line_after(&self, branch_end_pos: ByteIndex) -> usize {
-        self.added_new_line_after_arm(branch_end_pos)
-    }
-
     pub(crate) fn preprocess(&mut self, module_defs: &[Definition]) {
         for d in module_defs.iter() {
             self.collect_definition(d);

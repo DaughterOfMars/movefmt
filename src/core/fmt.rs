@@ -712,8 +712,7 @@ impl Format {
             let nested_branch_depth = self
                 .syntax_extractor
                 .branch_extractor
-                .added_new_line_after_branch(tok_end_pos)
-                + self.syntax_extractor.match_extractor.added_new_line_after(tok_end_pos);
+                .added_new_line_after_branch(tok_end_pos);
 
             if nested_branch_depth > 0 {
                 tracing::debug!("nested_branch_depth[{:?}] = [{:?}]", content, nested_branch_depth);
